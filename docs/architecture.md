@@ -91,3 +91,9 @@ analytics are simple queries on it. See `packages/server/migrations/`.
   generic site (signed action callbacks), YouTube (`commentThreads` and
   `setModerationStatus`), Facebook Pages and Instagram (Graph API v26.0). `kw source-add`,
   `kw source-test`, `kw source-poll`. See `docs/connectors.md`.
+- Milestone 6: the agent surface. One command catalogue in the contract package; REST
+  routes and MCP tools are generated from it and a parity test keeps them equal. Tokens
+  carry scopes (moderate, review, actions, admin); without `actions`, delete and ban
+  become proposals. MCP over streamable HTTP at `/mcp` and over stdio through the
+  `kommentarwache-mcp` package. Skills and plugin manifests for Claude Code, Cowork,
+  Codex, ChatGPT and opencode. See `docs/agents.md`.

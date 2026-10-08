@@ -1,0 +1,19 @@
+{
+  "name": "kommentarwache",
+  "version": "0.1.0",
+  "description": "Comment moderation with a review queue: moderate comments, work the queue and tune the policy of a self-hosted kommentarwache server.",
+  "author": { "name": "KI Klub Werder e.V." },
+  "userConfig": {
+    "server_url": {
+      "type": "string",
+      "title": "kommentarwache server URL",
+      "description": "Where your kommentarwache runs, e.g. https://moderation.example.org"
+    },
+    "token": {
+      "type": "string",
+      "title": "API token",
+      "description": "From `kw token create --name <agent> --scopes moderate,review`",
+      "sensitive": true
+    }
+  }
+}

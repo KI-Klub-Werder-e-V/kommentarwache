@@ -50,15 +50,19 @@ export async function actorForToken(db: Kysely<DB>, token: string): Promise<Auth
 
 export type AuthEnv = { Variables: { actor: AuthedActor } };
 
-/** Hono middleware: requires `Authorization: Bearer <token>` and the given scope. */
-export function bearerAuth(db: Kysely<DB>, scope: string) {
+export function hasScope(actor: { scopes: string[] }, scope: string): boolean {
+  return actor.scopes.includes(scope) || actor.scopes.includes('*');
+}
+
+/** Hono middleware: requires `Authorization: Bearer <token>`, and the given scope if any. */
+export function bearerAuth(db: Kysely<DB>, scope?: string) {
   return async (c: Context<AuthEnv>, next: Next) => {
     const header = c.req.header('authorization') ?? '';
     const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
     if (!token) return c.json({ error: 'missing bearer token' }, 401);
     const actor = await actorForToken(db, token);
     if (!actor) return c.json({ error: 'invalid token' }, 401);
-    if (!actor.scopes.includes(scope) && !actor.scopes.includes('*')) {
+    if (scope && !hasScope(actor, scope)) {
       return c.json({ error: `token lacks scope ${scope}` }, 403);
     }
     c.set('actor', actor);

@@ -452,6 +452,48 @@ export async function manualAction(
   return { actionId: row.id, outcome: await executeAction(db, deps, row.id) };
 }
 
+/** A delete or ban requested by a token without the actions scope: queued for a moderator. */
+export async function proposeAction(
+  db: Kysely<DB>,
+  opts: {
+    commentId: number;
+    type: 'delete' | 'ban';
+    actorId: number;
+    via: 'api' | 'mcp';
+    note?: string | undefined;
+  },
+): Promise<{ actionId: number }> {
+  const comment = await db
+    .selectFrom('comments')
+    .select(['id', 'revision', 'connector_id', 'author_id'])
+    .where('id', '=', opts.commentId)
+    .executeTakeFirstOrThrow();
+  const row = await db
+    .insertInto('actions')
+    .values({
+      connector_id: comment.connector_id,
+      comment_id: comment.id,
+      author_id: comment.author_id,
+      action_type: opts.type,
+      mode: 'proposed',
+      rule: opts.note ?? `proposed by ${opts.via}`,
+      actor_id: opts.actorId,
+      via: opts.via,
+      state: 'planned',
+      reversible: opts.type !== 'delete',
+      idempotency_key:
+        opts.type === 'ban'
+          ? `ban:${comment.connector_id}:${comment.author_id ?? comment.id}:author`
+          : `${opts.type}:${comment.id}:${comment.revision}`,
+    })
+    .onConflict((oc) => oc.column('idempotency_key').doNothing())
+    .returning('id')
+    .executeTakeFirst();
+  if (!row) throw new Error(`a ${opts.type} for this comment already exists`);
+  await queueForHuman(db, comment.id, 'proposed_action', 3);
+  return { actionId: row.id };
+}
+
 /** When a human says ok after a delete, the delete cannot be undone but is marked overturned. */
 export async function overturnDeletes(
   db: Kysely<DB>,

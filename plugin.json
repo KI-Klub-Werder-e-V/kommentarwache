@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "kommentarwache",
+  "version": "0.1.0",
+  "description": "Comment moderation with a review queue: moderate comments, work the queue and tune the policy of a self-hosted kommentarwache server."
+}

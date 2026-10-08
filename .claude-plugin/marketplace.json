@@ -1,0 +1,11 @@
+{
+  "name": "kommentarwache",
+  "owner": { "name": "KI Klub Werder e.V." },
+  "plugins": [
+    {
+      "name": "kommentarwache",
+      "source": "./",
+      "description": "Comment moderation with a review queue, as MCP tools and skills."
+    }
+  ]
+}

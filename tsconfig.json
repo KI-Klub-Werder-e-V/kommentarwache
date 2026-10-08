@@ -1,4 +1,8 @@
 {
   "files": [],
-  "references": [{ "path": "packages/contract" }, { "path": "packages/server" }]
+  "references": [
+    { "path": "packages/contract" },
+    { "path": "packages/server" },
+    { "path": "packages/mcp" }
+  ]
 }

@@ -1,6 +1,7 @@
 /**
- * The HTTP API. Every route is defined with a Zod schema so the OpenAPI document at
- * /openapi.json is always what the server does.
+ * The HTTP surface: the OpenAPI-documented moderate route, the REST routes generated
+ * from the command catalogue, the MCP endpoint, and the dashboard. One token model for
+ * all of it.
  */
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -13,10 +14,12 @@ import {
 import { BASE } from '../dashboard/layout.js';
 import { dashboardRoutes } from '../dashboard/routes.js';
 import type { DB } from '../db/types.js';
-import { contentHash, ingestComment } from '../pipeline/ingest.js';
-import { ProviderFailed, runStage1 } from '../pipeline/stage1.js';
+import { handleMcpRequest } from '../mcp/server.js';
+import { ProviderFailed } from '../pipeline/stage1.js';
 import type { ActivePipeline } from '../providers/registry.js';
 import { bearerAuth, type AuthEnv } from './auth.js';
+import { commandRoutes } from './commands.js';
+import { moderateComment } from './moderate.js';
 
 export interface AppDeps {
   db: Kysely<DB>;
@@ -75,52 +78,11 @@ export function createApp(deps: AppDeps) {
 
   app.openapi(healthRoute, (c) => c.json({ ok: true as const }, 200));
 
-  app.use('/v1/*', bearerAuth(deps.db, 'moderate'));
-
+  app.use('/v1/moderate', bearerAuth(deps.db, 'moderate'));
   app.openapi(moderateRoute, async (c) => {
-    const body = c.req.valid('json');
-    const pipeline = await deps.pipeline();
-    const connectorId = await ensureApiConnector(deps.db, body.source);
-    const ingest = await ingestComment(deps.db, {
-      connectorId,
-      platformCommentId: body.id ?? contentHash(body.text),
-      text: body.text,
-      ...(body.context ? { context: body.context } : {}),
-      ...(body.author_ref ? { authorRef: body.author_ref } : {}),
-      ...(body.author_name ? { authorName: body.author_name } : {}),
-      ...(body.permalink ? { permalink: body.permalink } : {}),
-      ...(body.parent_id ? { parentPlatformId: body.parent_id } : {}),
-      ...(body.thread_ref ? { threadRef: body.thread_ref } : {}),
-      ...(body.created_at ? { platformCreatedAt: new Date(body.created_at) } : {}),
-    });
-
     try {
-      const result = await runStage1(deps.db, pipeline, ingest.commentId);
-      const comment = await deps.db
-        .selectFrom('comments')
-        .select('state')
-        .where('id', '=', ingest.commentId)
-        .executeTakeFirstOrThrow();
-      const assessment = await deps.db
-        .selectFrom('assessments')
-        .select('model_version')
-        .where('id', '=', result.assessmentId)
-        .executeTakeFirst();
-      return c.json(
-        {
-          comment_id: result.commentId,
-          revision: result.revision,
-          created: ingest.created,
-          stage: 's1' as const,
-          verdict: result.routing.verdict,
-          category: result.routing.category,
-          reasons: result.routing.reasons,
-          state: comment.state,
-          model: assessment?.model_version ?? null,
-          policy: pipeline.policy.name,
-        },
-        200,
-      );
+      const result = await moderateComment(deps.db, await deps.pipeline(), c.req.valid('json'));
+      return c.json(result, 200);
     } catch (err) {
       if (err instanceof ProviderFailed) {
         return c.json({ error: 'decision provider unavailable', detail: err.message }, 503);
@@ -128,6 +90,15 @@ export function createApp(deps: AppDeps) {
       throw err;
     }
   });
+
+  // Every other command, with the same scopes the MCP tools use.
+  app.route('/', commandRoutes(deps.db, deps.pipeline, ['moderate_comment']));
+
+  // MCP over streamable HTTP, stateless, under the same bearer tokens.
+  app.use('/mcp', bearerAuth(deps.db));
+  app.all('/mcp', (c) =>
+    handleMcpRequest({ db: deps.db, pipeline: deps.pipeline, actor: c.get('actor') }, c.req.raw),
+  );
 
   app.doc('/openapi.json', {
     openapi: '3.1.0',
@@ -139,28 +110,4 @@ export function createApp(deps: AppDeps) {
   app.get('/', (c) => c.redirect(`${BASE}/`));
 
   return app;
-}
-
-/** Comments posted to the API land in a connector of kind `api`, one per source name. */
-async function ensureApiConnector(db: Kysely<DB>, name: string): Promise<number> {
-  const found = await db
-    .selectFrom('connectors')
-    .select(['id', 'kind'])
-    .where('name', '=', name)
-    .executeTakeFirst();
-  if (found) return found.id;
-  const row = await db
-    .insertInto('connectors')
-    .values({ kind: 'api', name })
-    .onConflict((oc) => oc.column('name').doNothing())
-    .returning('id')
-    .executeTakeFirst();
-  if (row) return row.id;
-  return (
-    await db
-      .selectFrom('connectors')
-      .select('id')
-      .where('name', '=', name)
-      .executeTakeFirstOrThrow()
-  ).id;
 }

@@ -6,7 +6,7 @@ LLM, acts on obvious violations itself, and sends only ambiguous comments to a l
 review dashboard. Every model decision is logged, and the same API is available to
 coding agents through MCP.
 
-Status: milestone 5 of 8. The two-stage pipeline works end to end: `POST /v1/moderate`
+Status: milestone 6 of 8. The two-stage pipeline works end to end: `POST /v1/moderate`
 answers with Jev's verdict at once, a background worker sends unsure comments to a local
 text LLM through Ollama, and what both leave unsure lands in the review queue of the
 dashboard at `/app`, where named moderators decide with one click and every decision is
@@ -15,8 +15,10 @@ platform according to the ladder (hide on stage 1, delete and ban only when both
 agree), under per-source modes (off, dry run, propose, auto) and hourly caps, with undo
 from the comment page. Connectors exist for YouTube, Facebook Pages, Instagram and any
 site through signed callbacks (`docs/connectors.md`); they are tested against recorded
-API responses and still need their first run on real accounts. The plan is in
-`docs/plan.md`.
+API responses and still need their first run on real accounts. Coding agents get the
+same commands as moderators through MCP (`/mcp` or `npx kommentarwache-mcp`), scoped
+tokens, three skills and plugin manifests for Claude Code, Codex and opencode
+(`docs/agents.md`). The plan is in `docs/plan.md`.
 
 ## Design in one paragraph
 

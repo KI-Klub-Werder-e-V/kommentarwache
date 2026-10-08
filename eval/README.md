@@ -46,3 +46,29 @@ seen on the synthetic set (the live v1 run also moved one comment compared with 
 prototype's stored answers).
 
 Mean latency per request was 250 to 300 ms at concurrency 4 to 6.
+
+## Stage 2 on the Facebook set (gemma4:12b through Ollama, 2026-10-08)
+
+`kw stage2-run` pushed the 103 comments stage 1 did not close (62 unsure, 41
+violations) through the text LLM on a 16-core workstation CPU.
+
+| | count |
+| --- | ---: |
+| judged | 103 |
+| closed by stage 2 | 71 (unsure→ok 33, unsure→violation 12, violation confirmed 26) |
+| sent to a human | 32 (both unsure 17, stage 1 flag disputed by stage 2 15) |
+| median / p95 latency per comment | 19.7 s / 25.0 s |
+
+Against the 118 blind labels: stage-1 verdicts agreed on 90 of 118; the final verdicts
+of the 100 labelled comments that are closed agreed on 71. Where the judge differed from
+the labels it was mostly lenient: of the 12 labelled comments it moved from unsure to
+ok, the reviewer had called 7 "review"; of the 25 labelled violations it confirmed, the
+reviewer had called 9 less than a violation. The 10 labelled stage-1 flags it disputed
+went to a human, and 7 of those the reviewer agreed were violations, which is what the
+"disputed flags go to a person" rule is for.
+
+What this means for the design: with stage 2, 31 of 357 comments (9 percent) reach a
+human, against 32 percent in the prototype, at the cost of a judge that is somewhat more
+permissive on mild rudeness than the blind reviewer. The stage-2 confidence lines and
+wording in `packages/server/src/policy/stage2.ts` are the knobs; `kw replay` does not
+cover stage 2 yet, so changing them means re-running `kw stage2-run` on a fresh connector.

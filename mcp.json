@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "kommentarwache": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "kommentarwache-mcp", "--stdio"],
+      "env": { "KW_URL": "http://localhost:8080", "KW_TOKEN": "" }
+    }
+  }
+}
