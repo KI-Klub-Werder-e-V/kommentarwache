@@ -14,6 +14,8 @@
 import { parseArgs } from 'node:util';
 import { createApiToken } from '../api/auth.js';
 import { verifyAudit } from '../audit.js';
+import { listSourcesWithModes, setConnectorModes } from '../connectors/modes.js';
+import { SYSTEM_ACTOR_ID, type ConnectorActionMode } from '../db/types.js';
 import { createModerator } from '../auth/moderators.js';
 import { loadDotenv, requireEnv } from '../config.js';
 import { createDb } from '../db/client.js';
@@ -245,6 +247,55 @@ async function main(argv: string[]): Promise<number> {
         );
         return result.brokenAt === null ? 0 : 1;
       }
+      case 'source': {
+        const { values, positionals } = parseArgs({
+          args: rest,
+          allowPositionals: true,
+          options: {
+            source: { type: 'string' },
+            hide: { type: 'string' },
+            delete: { type: 'string' },
+            ban: { type: 'string' },
+            'max-per-hour': { type: 'string' },
+          },
+        });
+        if (positionals[0] === 'list') {
+          for (const s of await listSourcesWithModes(handle.db)) {
+            console.log(
+              `${s.id}\t${s.name}\t${s.kind}\t${s.comments} comments\thide=${s.modes.hide} delete=${s.modes.delete} ban=${s.modes.ban}` +
+                (s.maxPerHour ? `\tcap=${s.maxPerHour}/h` : ''),
+            );
+          }
+          return 0;
+        }
+        if (positionals[0] !== 'modes' || !values.source) {
+          throw new Error(
+            'usage: kw source list | kw source modes --source <name> --hide <mode> --delete <mode> --ban <mode> [--max-per-hour n]',
+          );
+        }
+        const row = await handle.db
+          .selectFrom('connectors')
+          .select('id')
+          .where('name', '=', values.source)
+          .executeTakeFirst();
+        if (!row) throw new Error(`no source named ${values.source}`);
+        const pick = (v: string | undefined): ConnectorActionMode => {
+          if (v === undefined) return 'off';
+          if (!['off', 'dry_run', 'propose', 'auto'].includes(v))
+            throw new Error(`mode must be off, dry_run, propose or auto; got ${v}`);
+          return v as ConnectorActionMode;
+        };
+        await setConnectorModes(
+          handle.db,
+          row.id,
+          { hide: pick(values.hide), delete: pick(values.delete), ban: pick(values.ban) },
+          values['max-per-hour'] ? Number(values['max-per-hour']) : null,
+          SYSTEM_ACTOR_ID,
+          'cli',
+        );
+        console.log(`modes set for ${values.source}`);
+        return 0;
+      }
       case 'token': {
         const { values, positionals } = parseArgs({
           args: rest,
@@ -298,6 +349,9 @@ function usage(): string {
       [--limit <n>]
   labels import                 attach labels (JSON array or JSONL of {id, verdict}) to a connector
       --connector <name> --file <path> --source <name>
+  source list                   sources with their action modes
+  source modes                  set how far a source may act: off | dry_run | propose | auto
+      --source <name> --hide <mode> --delete <mode> --ban <mode> [--max-per-hour <n>]
   moderator create              create a dashboard account
       --email <e> --name <n> [--password <pw> | $KW_MODERATOR_PASSWORD]
   audit verify                  check the audit log's hash chain

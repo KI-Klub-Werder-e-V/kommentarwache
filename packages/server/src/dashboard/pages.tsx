@@ -3,6 +3,7 @@ import { CategorySchema } from '@kommentarwache/contract';
 import type { DailyRow, Overview, ProviderStats } from '../analytics/queries.js';
 import type { CommentDetail, LogRow, QueueItem } from '../review/queries.js';
 import { BASE, fmtDate, truncate, VerdictBadge } from './layout.js';
+import { ActionsSection } from './sources.js';
 
 export const LoginPage: FC<{ error?: string | undefined; next?: string | undefined }> = ({
   error,
@@ -157,6 +158,8 @@ export const CommentPage: FC<{ d: CommentDetail; nextInQueue?: number | undefine
           </form>
         </>
       ) : null}
+
+      <ActionsSection d={d} />
 
       <h2>Timeline</h2>
       <table>

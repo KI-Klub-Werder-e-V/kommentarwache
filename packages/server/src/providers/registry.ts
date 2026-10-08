@@ -6,8 +6,11 @@
 
 import type { Kysely, Selectable } from 'kysely';
 import { PolicySchema, type Battery, type Policy } from '@kommentarwache/contract';
+import { applyLadder } from '../actions/engine.js';
+import type { ConnectorRegistry } from '../connectors/connector.js';
+import { defaultConnectorRegistry } from '../connectors/registry.js';
 import { makeEnqueueStage2 } from '../pipeline/queue.js';
-import type { EnqueueStage2 } from '../pipeline/stage1.js';
+import type { AfterDecision, EnqueueStage2 } from '../pipeline/stage1.js';
 import { OllamaJudgeProvider, type JudgeProvider } from './llmjudge.js';
 import { BATTERIES } from '../batteries/index.js';
 import { SYSTEM_ACTOR_ID, type DB, type ProviderConfigsTable } from '../db/types.js';
@@ -187,12 +190,15 @@ export interface ActivePipeline {
   /** absent when no stage-2 judge is configured: unsure comments then wait for a human */
   judge?: JudgeProvider;
   enqueueStage2: EnqueueStage2;
+  connectors: ConnectorRegistry;
+  afterDecision: AfterDecision;
 }
 
 /** The active pipeline config with its providers built and ready. */
 export async function loadActivePipeline(
   db: Kysely<DB>,
   env: ProviderEnv,
+  connectors: ConnectorRegistry = defaultConnectorRegistry(),
 ): Promise<ActivePipeline> {
   const config = await db
     .selectFrom('pipeline_configs')
@@ -250,6 +256,10 @@ export async function loadActivePipeline(
     policyId: policyRow.id,
     ...(judgeRow ? { judge: buildJudge(judgeRow, env) } : {}),
     enqueueStage2: makeEnqueueStage2(),
+    connectors,
+    afterDecision: async (t) => {
+      await applyLadder(db, { connectors }, policy.data, t);
+    },
   };
 }
 

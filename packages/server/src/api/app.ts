@@ -135,7 +135,7 @@ export function createApp(deps: AppDeps) {
   });
 
   // The moderator dashboard, under its own prefix so pages and API never share a path.
-  app.route(BASE, dashboardRoutes(deps.db));
+  app.route(BASE, dashboardRoutes(deps.db, deps.pipeline));
   app.get('/', (c) => c.redirect(`${BASE}/`));
 
   return app;

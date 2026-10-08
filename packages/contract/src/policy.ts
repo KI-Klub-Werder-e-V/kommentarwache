@@ -76,10 +76,26 @@ export const Stage2PolicySchema = z.object({
 });
 export type Stage2Policy = z.infer<typeof Stage2PolicySchema>;
 
+/**
+ * The action ladder. Hide needs stage 1 alone (reversible); delete and ban need both
+ * stages to agree and a category on the list, or enough confirmed strikes.
+ */
+export const ActionsPolicySchema = z.object({
+  /** categories that, confirmed by both stages, are deleted and not only hidden */
+  deleteCategories: z.array(CategorySchema),
+  /** categories that, confirmed by both stages, ban the author on the first comment */
+  banCategories: z.array(CategorySchema),
+  /** confirmed violations by one author within the window that ban the author */
+  strikesForBan: z.number().int().positive(),
+  strikeWindowDays: z.number().int().positive(),
+});
+export type ActionsPolicy = z.infer<typeof ActionsPolicySchema>;
+
 export const PolicySchema = z.object({
   name: z.string().min(1),
   v1: V1ThresholdsSchema,
   v2: V2ThresholdsSchema,
   stage2: Stage2PolicySchema,
+  actions: ActionsPolicySchema,
 });
 export type Policy = z.infer<typeof PolicySchema>;

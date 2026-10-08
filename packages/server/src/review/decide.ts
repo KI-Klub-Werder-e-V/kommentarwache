@@ -5,7 +5,8 @@
  */
 
 import type { Kysely } from 'kysely';
-import type { Category, Verdict } from '@kommentarwache/contract';
+import type { Category, Policy, Verdict } from '@kommentarwache/contract';
+import { applyLadder, overturnDeletes, type EngineDeps } from '../actions/engine.js';
 import { appendAudit, type AuditEntry } from '../audit.js';
 import type { DB } from '../db/types.js';
 
@@ -24,9 +25,15 @@ export interface HumanDecisionResult {
   overrides: { stage: 's1' | 's2'; verdict: Verdict } | null;
 }
 
+/** What a human decision needs to act on the platform; without it, only the record changes. */
+export interface DecisionEngine extends EngineDeps {
+  policy: Policy;
+}
+
 export async function decideComment(
   db: Kysely<DB>,
   d: HumanDecision,
+  engine?: DecisionEngine,
 ): Promise<HumanDecisionResult> {
   const result = await db.transaction().execute(async (trx) => {
     const comment = await trx
@@ -108,5 +115,15 @@ export async function decideComment(
     },
   };
   await appendAudit(db, audit);
+
+  if (engine) {
+    if (d.verdict === 'ok') await overturnDeletes(db, d.commentId, result.decisionId);
+    await applyLadder(db, engine, engine.policy, {
+      trigger: 'human',
+      commentId: d.commentId,
+      actorId: d.actorId,
+      via: d.via,
+    });
+  }
   return result;
 }

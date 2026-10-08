@@ -121,6 +121,20 @@ export interface CommentDetail {
   }>;
   reviewItems: Array<{ id: number; reason: string; createdAt: Date; resolvedAt: Date | null }>;
   labels: Array<{ source: string; verdict: Verdict; note: string | null }>;
+  actions: Array<{
+    id: number;
+    type: string;
+    mode: string;
+    state: string;
+    rule: string | null;
+    actor: string;
+    via: string;
+    error: string | null;
+    createdAt: Date;
+    executedAt: Date | null;
+    undoneAt: Date | null;
+    overturnedAt: Date | null;
+  }>;
 }
 
 export async function commentDetail(db: Kysely<DB>, id: number): Promise<CommentDetail | null> {
@@ -197,6 +211,26 @@ export async function commentDetail(db: Kysely<DB>, id: number): Promise<Comment
     .select(['source', 'verdict', 'note'])
     .where('comment_id', '=', id)
     .execute();
+  const actions = await db
+    .selectFrom('actions')
+    .innerJoin('actors', 'actors.id', 'actions.actor_id')
+    .select([
+      'actions.id',
+      'actions.action_type as type',
+      'actions.mode',
+      'actions.state',
+      'actions.rule',
+      'actors.name as actor',
+      'actions.via',
+      'actions.error',
+      'actions.created_at as createdAt',
+      'actions.executed_at as executedAt',
+      'actions.undone_at as undoneAt',
+      'actions.overturned_at as overturnedAt',
+    ])
+    .where('actions.comment_id', '=', id)
+    .orderBy('actions.id')
+    .execute();
 
   return {
     comment: {
@@ -250,6 +284,7 @@ export async function commentDetail(db: Kysely<DB>, id: number): Promise<Comment
       resolvedAt: r.resolved_at,
     })),
     labels,
+    actions,
   };
 }
 

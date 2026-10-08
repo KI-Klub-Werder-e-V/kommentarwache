@@ -6,14 +6,15 @@ LLM, acts on obvious violations itself, and sends only ambiguous comments to a l
 review dashboard. Every model decision is logged, and the same API is available to
 coding agents through MCP.
 
-Status: milestone 3 of 8. The two-stage pipeline works end to end: `POST /v1/moderate`
+Status: milestone 4 of 8. The two-stage pipeline works end to end: `POST /v1/moderate`
 answers with Jev's verdict at once, a background worker sends unsure comments to a local
 text LLM through Ollama, and what both leave unsure lands in the review queue of the
 dashboard at `/app`, where named moderators decide with one click and every decision is
-logged in a hash-chained audit trail. Analytics show how much the models settled and how
-much a human had to read. Everything is stored and replayable, and the eval harness
-reports agreement with labelled sets (see `eval/README.md`). No platform actions or
-connectors yet. The plan is in `docs/plan.md`.
+logged in a hash-chained audit trail. The actions engine hides, deletes and bans on a
+platform according to the ladder (hide on stage 1, delete and ban only when both stages
+agree), under per-source modes (off, dry run, propose, auto) and hourly caps, with undo
+from the comment page. So far the only platform is an in-memory fake; the real
+connectors are milestone 5. The plan is in `docs/plan.md`.
 
 ## Design in one paragraph
 
@@ -39,6 +40,7 @@ $KW migrate
 $KW setup                        # activates Jev with battery v2 and the severity_led policy
 $KW token create --name demo     # prints an API token once
 $KW moderator create --email you@example.org --name "You" --password 'at least ten chars'
+$KW source modes --source demo --hide auto --delete propose --ban propose   # or in the dashboard
 pnpm --filter @kommentarwache/server dev
 # dashboard: http://localhost:8080/app
 

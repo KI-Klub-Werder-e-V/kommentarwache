@@ -19,7 +19,16 @@ export interface Stage1Context {
   pipelineConfigId?: number | null;
   /** queues the stage-2 job inside the same transaction as the decision */
   enqueueStage2?: EnqueueStage2;
+  /** the actions engine, called after a decision is committed */
+  afterDecision?: AfterDecision;
 }
+
+export type AfterDecision = (t: {
+  trigger: 's1' | 's2' | 'human';
+  commentId: number;
+  actorId?: number;
+  via?: 'pipeline' | 'dashboard' | 'api' | 'mcp';
+}) => Promise<void>;
 
 export type EnqueueStage2 = (
   trx: Kysely<DB>,
@@ -172,6 +181,12 @@ export async function runStage1(
     }
     return d;
   });
+
+  // Actions follow the decision, never inside its transaction: a platform call that
+  // fails must not undo the decision.
+  if (routing.verdict !== 'ok' && ctx.afterDecision) {
+    await ctx.afterDecision({ trigger: 's1', commentId: comment.id });
+  }
 
   return {
     commentId: comment.id,

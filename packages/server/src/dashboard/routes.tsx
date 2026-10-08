@@ -22,14 +22,19 @@ import {
   type SessionEnv,
 } from '../auth/session.js';
 import type { DB } from '../db/types.js';
+import { executeProposed, manualAction, undoAction } from '../actions/engine.js';
+import { listSourcesWithModes, setConnectorModes } from '../connectors/modes.js';
+import type { ConnectorActionMode } from '../db/types.js';
+import type { ActivePipeline } from '../providers/registry.js';
 import { decideComment } from '../review/decide.js';
 import { commentDetail, listLog, listQueue, listSources } from '../review/queries.js';
+import { SourcesPage } from './sources.js';
 import { BASE, Layout } from './layout.js';
 import { AnalyticsPage, CommentPage, LoginPage, LogPage, QueuePage } from './pages.js';
 
 const HTMX_PATH = createRequire(import.meta.url).resolve('htmx.org/dist/htmx.min.js');
 
-export function dashboardRoutes(db: Kysely<DB>) {
+export function dashboardRoutes(db: Kysely<DB>, pipeline: () => Promise<ActivePipeline>) {
   const app = new Hono<SessionEnv>({ strict: false });
 
   app.get('/htmx.min.js', async (c) => {
@@ -118,16 +123,80 @@ export function dashboardRoutes(db: Kysely<DB>) {
     if (!Number.isInteger(id) || !verdict.success || verdict.data === 'unsure')
       return c.text('bad request', 400);
     const note = String(form['note'] ?? '').trim();
-    await decideComment(db, {
-      commentId: id,
-      verdict: verdict.data,
-      category: category.success ? category.data : 'other',
-      note: note || undefined,
-      actorId: c.get('moderator').id,
-      via: 'dashboard',
-    });
+    const p = await pipeline();
+    await decideComment(
+      db,
+      {
+        commentId: id,
+        verdict: verdict.data,
+        category: category.success ? category.data : 'other',
+        note: note || undefined,
+        actorId: c.get('moderator').id,
+        via: 'dashboard',
+      },
+      { connectors: p.connectors, policy: p.policy },
+    );
     const next = String(form['next'] ?? '');
     return c.redirect(/^\d+$/.test(next) ? `${BASE}/comments/${next}` : `${BASE}/`);
+  });
+
+  // Platform actions from the comment page: a moderator's own hide/delete/ban, executing
+  // a proposal, or undoing a hide or ban.
+  app.post('/comments/:id/action', async (c) => {
+    const id = Number(c.req.param('id'));
+    const form = await c.req.parseBody();
+    const op = String(form['op'] ?? '');
+    const p = await pipeline();
+    const engine = { connectors: p.connectors };
+    const actorId = c.get('moderator').id;
+    if (op === 'hide' || op === 'delete' || op === 'ban') {
+      await manualAction(db, engine, { commentId: id, type: op, actorId, via: 'dashboard' });
+    } else if (/^execute:\d+$/.test(op)) {
+      await executeProposed(db, engine, Number(op.slice(8)), actorId, 'dashboard');
+    } else if (/^undo:\d+$/.test(op)) {
+      await undoAction(db, engine, Number(op.slice(5)), actorId, 'dashboard');
+    } else {
+      return c.text('bad request', 400);
+    }
+    return c.redirect(`${BASE}/comments/${id}`);
+  });
+
+  app.get('/sources', async (c) => {
+    const [sources, queue] = await Promise.all([listSourcesWithModes(db), listQueue(db, 1000)]);
+    return c.html(
+      <Layout
+        title="Sources"
+        active="sources"
+        moderator={c.get('moderator')}
+        openCount={queue.length}
+      >
+        <SourcesPage sources={sources} />
+      </Layout>,
+    );
+  });
+
+  app.post('/sources/:id/modes', async (c) => {
+    const id = Number(c.req.param('id'));
+    const form = await c.req.parseBody();
+    const modes = {} as Record<'hide' | 'delete' | 'ban', ConnectorActionMode>;
+    for (const type of ['hide', 'delete', 'ban'] as const) {
+      const v = String(form[type] ?? 'off');
+      modes[type] = (['off', 'dry_run', 'propose', 'auto'] as const).includes(
+        v as ConnectorActionMode,
+      )
+        ? (v as ConnectorActionMode)
+        : 'off';
+    }
+    const cap = Number(form['max_per_hour']);
+    await setConnectorModes(
+      db,
+      id,
+      modes,
+      Number.isInteger(cap) && cap > 0 ? cap : null,
+      c.get('moderator').id,
+      'dashboard',
+    );
+    return c.redirect(`${BASE}/sources`);
   });
 
   app.get('/log', async (c) => {

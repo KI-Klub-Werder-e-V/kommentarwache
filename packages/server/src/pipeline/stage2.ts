@@ -9,13 +9,14 @@ import type { Kysely } from 'kysely';
 import type { Category, Policy, Verdict } from '@kommentarwache/contract';
 import { SYSTEM_ACTOR_ID, type DB, type ReviewReason } from '../db/types.js';
 import type { JudgeProvider } from '../providers/llmjudge.js';
-import { ProviderFailed } from './stage1.js';
+import { ProviderFailed, type AfterDecision } from './stage1.js';
 
 export interface Stage2Context {
   judge: JudgeProvider;
   policy: Policy;
   policyId: number;
   pipelineConfigId?: number | null;
+  afterDecision?: AfterDecision | undefined;
 }
 
 export interface Stage2Result {
@@ -246,6 +247,8 @@ export async function runStage2(
     }
     return d;
   });
+
+  if (ctx.afterDecision) await ctx.afterDecision({ trigger: 's2', commentId: comment.id });
 
   return {
     commentId: comment.id,

@@ -80,3 +80,9 @@ analytics are simple queries on it. See `packages/server/migrations/`.
   decision, decision log, analytics), moderator accounts with scrypt passwords and
   server-side sessions, `decideComment` as the one path for human decisions, and the
   hash-chained audit log (`kw audit verify`).
+- Milestone 4: the actions engine. `ladder()` is pure code; `applyLadder` applies the
+  connector's capabilities and the source's modes (off, dry_run, propose, auto) and
+  hourly cap, records every action as a row before anything happens, executes the
+  automatic ones, and queues the rest for a human (proposed, unsupported, failed).
+  Undo for hide and ban; deletes a human overturns are marked. A Sources page and
+  `kw source modes` set the modes. The `fake` connector is an in-memory platform.

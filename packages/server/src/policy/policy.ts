@@ -8,6 +8,7 @@
 
 import {
   higherVerdict,
+  type ActionsPolicy,
   type Answers,
   type Category,
   type Policy,
@@ -36,7 +37,7 @@ const V2_DEFAULT: V2Thresholds = {
 };
 
 /** The prototype's four named policies, in the new vocabulary, plus v2 thresholds. */
-const NAMED: Record<string, Omit<Policy, 'stage2'>> = {
+const NAMED: Record<string, Omit<Policy, 'stage2' | 'actions'>> = {
   // Default. Hostility alone only earns a second look; the graded severity scale decides
   // what is a violation. Mild rudeness is unsure, harassment and threats are violations.
   severity_led: {
@@ -95,9 +96,20 @@ const NAMED: Record<string, Omit<Policy, 'stage2'>> = {
   },
 };
 
-/** Every named policy shares the default stage-2 wording; only thresholds differ. */
+/** The default ladder: delete only what both stages call severe; ban on threats, scams or strikes. */
+export const ACTIONS_DEFAULT: ActionsPolicy = {
+  deleteCategories: ['threat', 'doxxing', 'hate', 'scam'],
+  banCategories: ['threat', 'scam'],
+  strikesForBan: 3,
+  strikeWindowDays: 30,
+};
+
+/** Every named policy shares the default stage-2 wording and ladder; only thresholds differ. */
 export const POLICIES: Record<string, Policy> = Object.fromEntries(
-  Object.entries(NAMED).map(([name, p]) => [name, { ...p, stage2: STAGE2_DEFAULT }]),
+  Object.entries(NAMED).map(([name, p]) => [
+    name,
+    { ...p, stage2: STAGE2_DEFAULT, actions: ACTIONS_DEFAULT },
+  ]),
 );
 export const DEFAULT_POLICY = 'severity_led';
 

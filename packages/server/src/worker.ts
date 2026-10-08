@@ -55,6 +55,7 @@ export function buildTasks(deps: WorkerDeps): TaskList {
             policy: pipeline.policy,
             policyId: pipeline.policyId,
             pipelineConfigId: pipeline.pipelineConfigId,
+            afterDecision: pipeline.afterDecision,
           },
           commentId,
         );

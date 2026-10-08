@@ -47,7 +47,7 @@ pre { font-size: .8em; overflow-x: auto; }
 
 export interface LayoutProps {
   title: string;
-  active?: 'queue' | 'log' | 'analytics' | undefined;
+  active?: 'queue' | 'log' | 'analytics' | 'sources' | undefined;
   moderator?: { name: string } | undefined;
   openCount?: number | undefined;
 }
@@ -80,6 +80,9 @@ export const Layout: FC<PropsWithChildren<LayoutProps>> = ({
             </a>
             <a href={`${BASE}/analytics`} class={active === 'analytics' ? 'active' : ''}>
               Analytics
+            </a>
+            <a href={`${BASE}/sources`} class={active === 'sources' ? 'active' : ''}>
+              Sources
             </a>
             <span class="spacer"></span>
             <span class="who">{moderator.name}</span>
