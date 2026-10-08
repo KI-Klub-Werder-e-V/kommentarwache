@@ -5,7 +5,14 @@
  */
 
 import type { Kysely } from 'kysely';
-import { CategorySchema, type Policy, type Routing, type Verdict } from '@kommentarwache/contract';
+import {
+  CategorySchema,
+  type Answers,
+  type CommentContext,
+  type Policy,
+  type Routing,
+  type Verdict,
+} from '@kommentarwache/contract';
 import { SYSTEM_ACTOR_ID, type DB } from '../db/types.js';
 import { route } from '../policy/policy.js';
 import type { DecisionProvider } from '../providers/provider.js';
@@ -21,6 +28,17 @@ export interface Stage1Context {
   enqueueStage2?: EnqueueStage2;
   /** the actions engine, called after a decision is committed */
   afterDecision?: AfterDecision;
+  /** providers judged alongside the primary; with `all_agree_else_unsure` a disagreement is unsure */
+  parallel?: Stage1Member[] | undefined;
+  combiner?: 'primary_only' | 'all_agree_else_unsure' | undefined;
+  /** providers judged after the decision, recorded but never acted on (the Laya migration) */
+  shadows?: Stage1Member[] | undefined;
+}
+
+export interface Stage1Member {
+  provider: DecisionProvider;
+  batteryId: number;
+  mapper: 'v1' | 'v2';
 }
 
 export type AfterDecision = (t: {
@@ -146,7 +164,32 @@ export async function runStage1(
     answers = outcome.answers;
   }
 
-  const routing = route(ctx.mapper, answers, ctx.policy);
+  let routing = route(ctx.mapper, answers, ctx.policy);
+  const assessmentIds = [assessmentId];
+  const sideDecisions: Array<{ providerConfigId: number; routing: Routing; assessmentId: number }> =
+    [];
+  for (const member of ctx.parallel ?? []) {
+    const side = await assessMember(db, member, comment, 'parallel');
+    if (!side.answers) continue;
+    assessmentIds.push(side.assessmentId);
+    const r = route(member.mapper, side.answers, ctx.policy);
+    sideDecisions.push({
+      providerConfigId: member.provider.configId,
+      routing: r,
+      assessmentId: side.assessmentId,
+    });
+    if (ctx.combiner === 'all_agree_else_unsure' && r.verdict !== routing.verdict) {
+      routing = {
+        verdict: 'unsure',
+        category: routing.verdict === 'ok' ? r.category : routing.category,
+        reasons: [
+          ...routing.reasons,
+          `${member.provider.name} said ${r.verdict}: ${r.reasons.join('; ') || 'no reason'}`,
+        ],
+      };
+    }
+  }
+
   const decision = await db.transaction().execute(async (trx) => {
     const d = await trx
       .insertInto('decisions')
@@ -159,12 +202,31 @@ export async function runStage1(
         reasons: JSON.stringify(routing.reasons),
         policy_id: ctx.policyId,
         provider_config_id: ctx.provider.configId,
-        assessment_ids: [assessmentId],
+        assessment_ids: assessmentIds,
         actor_id: SYSTEM_ACTOR_ID,
         via: 'pipeline',
       })
       .returning('id')
       .executeTakeFirstOrThrow();
+    for (const side of sideDecisions) {
+      await trx
+        .insertInto('decisions')
+        .values({
+          comment_id: comment.id,
+          revision: comment.revision,
+          stage: 's1',
+          effective: false,
+          verdict: side.routing.verdict,
+          category: side.routing.category,
+          reasons: JSON.stringify(side.routing.reasons),
+          policy_id: ctx.policyId,
+          provider_config_id: side.providerConfigId,
+          assessment_ids: [side.assessmentId],
+          actor_id: SYSTEM_ACTOR_ID,
+          via: 'pipeline',
+        })
+        .execute();
+    }
     const next = nextState(routing.verdict, routing.category, ctx);
     await trx
       .updateTable('comments')
@@ -181,6 +243,45 @@ export async function runStage1(
     }
     return d;
   });
+
+  // Shadows are judged after the decision and recorded as non-effective decisions. A
+  // disagreement that involves a violation is worth a human look during a migration.
+  for (const member of ctx.shadows ?? []) {
+    try {
+      const side = await assessMember(db, member, comment, 'shadow');
+      if (!side.answers) continue;
+      const r = route(member.mapper, side.answers, ctx.policy);
+      await db
+        .insertInto('decisions')
+        .values({
+          comment_id: comment.id,
+          revision: comment.revision,
+          stage: 's1',
+          effective: false,
+          verdict: r.verdict,
+          category: r.category,
+          reasons: JSON.stringify(r.reasons),
+          policy_id: ctx.policyId,
+          provider_config_id: member.provider.configId,
+          assessment_ids: [side.assessmentId],
+          actor_id: SYSTEM_ACTOR_ID,
+          via: 'pipeline',
+        })
+        .execute();
+      if (
+        r.verdict !== routing.verdict &&
+        (r.verdict === 'violation' || routing.verdict === 'violation')
+      ) {
+        await db
+          .insertInto('review_items')
+          .values({ comment_id: comment.id, reason: 'shadow_diff', priority: -5 })
+          .onConflict((oc) => oc.doNothing())
+          .execute();
+      }
+    } catch {
+      // a shadow must never affect the comment; its failure is in the assessment row
+    }
+  }
 
   // Actions follow the decision, never inside its transaction: a platform call that
   // fails must not undo the decision.
@@ -216,4 +317,49 @@ function nextState(verdict: Verdict, category: string, ctx: Stage1Context) {
     state: 's2_pending' as const,
     state_deadline_at: new Date(Date.now() + ctx.policy.stage2.deadlineSeconds * 1000),
   };
+}
+
+/** Judge a comment with a parallel or shadow member; idempotent per provider, errors recorded. */
+async function assessMember(
+  db: Kysely<DB>,
+  member: Stage1Member,
+  comment: { id: number; revision: number; text: string; context: CommentContext },
+  role: 'parallel' | 'shadow',
+): Promise<{ assessmentId: number; answers: Answers | null }> {
+  const stored = await db
+    .selectFrom('assessments')
+    .select(['id', 'answers'])
+    .where('comment_id', '=', comment.id)
+    .where('revision', '=', comment.revision)
+    .where('provider_config_id', '=', member.provider.configId)
+    .where('stage', '=', 's1')
+    .executeTakeFirst();
+  if (stored) return { assessmentId: stored.id, answers: stored.answers };
+  const outcome = await member.provider.assess({ text: comment.text, context: comment.context });
+  const inserted = await db
+    .insertInto('assessments')
+    .values({
+      comment_id: comment.id,
+      revision: comment.revision,
+      provider_config_id: member.provider.configId,
+      stage: 's1',
+      role,
+      status: outcome.status,
+      model_version: outcome.modelVersion ?? null,
+      battery_id: member.batteryId,
+      answers: outcome.answers ? JSON.stringify(outcome.answers) : null,
+      raw: outcome.raw ? JSON.stringify(outcome.raw) : null,
+      latency_ms: outcome.latencyMs,
+      input_tokens: outcome.usage?.input_tokens ?? null,
+      output_tokens: outcome.usage?.output_tokens ?? null,
+      cost_usd: outcome.costUsd ?? null,
+      error: outcome.error ?? null,
+    })
+    .onConflict((oc) =>
+      oc.columns(['comment_id', 'revision', 'provider_config_id', 'stage']).doNothing(),
+    )
+    .returning('id')
+    .executeTakeFirst();
+  if (!inserted) return assessMember(db, member, comment, role);
+  return { assessmentId: inserted.id, answers: outcome.answers ?? null };
 }

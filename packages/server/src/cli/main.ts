@@ -37,6 +37,10 @@ import {
   setupJevPipeline,
 } from '../providers/registry.js';
 import { startWorker } from '../worker.js';
+import { datasetReadiness, exportDataset } from '../laya/export.js';
+import { runGate } from '../laya/gate.js';
+import { layaPromote, layaRollback, layaShadow } from '../laya/pipeline.js';
+import { buildStage1Member, ensureLayaProvider } from '../providers/registry.js';
 import pino from 'pino';
 
 function policyByName(name: string) {
@@ -384,6 +388,84 @@ async function main(argv: string[]): Promise<number> {
         console.log(JSON.stringify(summary, null, 2));
         return summary.error ? 1 : 0;
       }
+      case 'laya': {
+        const { values, positionals } = parseArgs({
+          args: rest,
+          allowPositionals: true,
+          options: {
+            model: { type: 'string', default: 'multilingual' },
+            source: { type: 'string' },
+            'no-shadow': { type: 'boolean', default: false },
+          },
+        });
+        const env = envFromProcess();
+        switch (positionals[0]) {
+          case 'shadow': {
+            const r = await layaShadow(handle.db, env, values.model);
+            console.log(
+              r.created
+                ? `pipeline config ${r.pipelineConfigId}: ${r.providerName} now judges every comment as a shadow`
+                : `${r.providerName} is already a shadow`,
+            );
+            return 0;
+          }
+          case 'promote': {
+            const r = await layaPromote(handle.db, env, {
+              model: values.model,
+              keepShadow: !values['no-shadow'],
+            });
+            console.log(
+              `pipeline config ${r.pipelineConfigId}: Laya is stage 1${values['no-shadow'] ? '' : ', the previous primary shadows it'}; ${r.demotedToPropose} auto delete/ban modes dropped to propose`,
+            );
+            return 0;
+          }
+          case 'rollback': {
+            const r = await layaRollback(handle.db);
+            console.log(`pipeline config ${r.pipelineConfigId} (version ${r.version}) restored`);
+            return 0;
+          }
+          case 'gate': {
+            if (!values.source)
+              throw new Error('usage: kw laya gate --source <name> [--model multilingual]');
+            const laya = await ensureLayaProvider(handle.db, env, values.model);
+            const pipeline = await loadActivePipeline(handle.db, env);
+            const candidate = await buildStage1Member(handle.db, env, laya.id);
+            const r = await runGate(handle.db, {
+              candidate,
+              policy: pipeline.policy,
+              sourceName: values.source,
+              log: (l) => console.error(l),
+            });
+            console.log(JSON.stringify(r, null, 2));
+            return r.passed ? 0 : 1;
+          }
+          default:
+            throw new Error(
+              'usage: kw laya <shadow | promote | rollback | gate> [--model m] [--source s] [--no-shadow]',
+            );
+        }
+      }
+      case 'dataset': {
+        const { values, positionals } = parseArgs({
+          args: rest,
+          allowPositionals: true,
+          options: { out: { type: 'string' }, since: { type: 'string' } },
+        });
+        if (positionals[0] === 'readiness') {
+          console.log(JSON.stringify(await datasetReadiness(handle.db), null, 2));
+          return 0;
+        }
+        if (positionals[0] !== 'export' || !values.out)
+          throw new Error(
+            'usage: kw dataset export --out <file.jsonl> [--since YYYY-MM-DD] | kw dataset readiness',
+          );
+        const summary = await exportDataset(handle.db, {
+          out: values.out,
+          since: values.since ? new Date(values.since) : undefined,
+        });
+        console.log(JSON.stringify(summary, null, 2));
+        return 0;
+      }
       case 'token': {
         const { values, positionals } = parseArgs({
           args: rest,
@@ -444,6 +526,12 @@ function usage(): string {
   source list                   sources with their action modes
   source modes                  set how far a source may act: off | dry_run | propose | auto
       --source <name> --hide <mode> --delete <mode> --ban <mode> [--max-per-hour <n>]
+  laya shadow|promote|rollback  the Laya migration as pipeline-config versions (see training/README.md)
+      [--model multilingual] [--no-shadow]
+  laya gate --source <name>     score a Laya checkpoint against labels and the primary
+  dataset export --out <file>   Laya training JSONL from stored answers and human decisions
+      [--since YYYY-MM-DD]
+  dataset readiness             how far the labels are from the training targets
   moderator create              create a dashboard account
       --email <e> --name <n> [--password <pw> | $KW_MODERATOR_PASSWORD]
   audit verify                  check the audit log's hash chain

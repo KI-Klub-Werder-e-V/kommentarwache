@@ -11,7 +11,7 @@ import type { ConnectorRegistry } from '../connectors/connector.js';
 import { defaultConnectorRegistry } from '../connectors/registry.js';
 import { secretKeyFromEnv } from '../connectors/secrets.js';
 import { makeEnqueueStage2 } from '../pipeline/queue.js';
-import type { AfterDecision, EnqueueStage2 } from '../pipeline/stage1.js';
+import type { AfterDecision, EnqueueStage2, Stage1Member } from '../pipeline/stage1.js';
 import { OllamaJudgeProvider, type JudgeProvider } from './llmjudge.js';
 import { BATTERIES } from '../batteries/index.js';
 import { SYSTEM_ACTOR_ID, type DB, type ProviderConfigsTable } from '../db/types.js';
@@ -30,6 +30,7 @@ export interface ProviderEnv {
   ollamaModel?: string | undefined;
   /** decoded KW_SECRET_KEY, when set */
   secretKey?: Buffer | undefined;
+  layaUrl?: string | undefined;
 }
 
 export const OLLAMA_DEFAULT_URL = 'http://localhost:11434';
@@ -42,6 +43,7 @@ export function envFromProcess(): ProviderEnv {
     ollamaUrl: process.env['OLLAMA_URL'],
     ollamaModel: process.env['OLLAMA_MODEL'],
     secretKey: process.env['KW_SECRET_KEY'] ? secretKeyFromEnv() : undefined,
+    layaUrl: process.env['LAYA_URL'],
   };
 }
 
@@ -197,6 +199,38 @@ export interface ActivePipeline {
   connectors: ConnectorRegistry;
   secretKey?: Buffer | undefined;
   afterDecision: AfterDecision;
+  parallel?: Stage1Member[] | undefined;
+  combiner?: 'primary_only' | 'all_agree_else_unsure' | undefined;
+  shadows?: Stage1Member[] | undefined;
+}
+
+/** A stage-1 provider with its battery, from a provider_configs id. */
+export async function buildStage1Member(
+  db: Kysely<DB>,
+  env: ProviderEnv,
+  providerConfigId: number,
+): Promise<Stage1Member> {
+  const row = await db
+    .selectFrom('provider_configs')
+    .selectAll()
+    .where('id', '=', providerConfigId)
+    .executeTakeFirstOrThrow(() => new Error(`provider config ${providerConfigId} not found`));
+  if (!row.battery_id) throw new Error(`provider ${row.name} has no battery`);
+  const batteryRow = await db
+    .selectFrom('batteries')
+    .selectAll()
+    .where('id', '=', row.battery_id)
+    .executeTakeFirstOrThrow();
+  const battery: Battery = {
+    name: batteryRow.name,
+    version: batteryRow.version,
+    questions: batteryRow.questions,
+  };
+  return {
+    provider: buildProvider(row, battery, env),
+    batteryId: batteryRow.id,
+    mapper: batteryRow.mapper === 'v1' ? 'v1' : 'v2',
+  };
 }
 
 /** The active pipeline config with its providers built and ready. */
@@ -266,39 +300,85 @@ export async function loadActivePipeline(
     afterDecision: async (t) => {
       await applyLadder(db, { connectors, secretKey: env.secretKey }, policy.data, t);
     },
+    parallel: await Promise.all(config.s1_parallel.map((id) => buildStage1Member(db, env, id))),
+    combiner: config.s1_combiner,
+    shadows: await Promise.all(config.shadows.map((id) => buildStage1Member(db, env, id))),
   };
 }
 
-/**
- * Activate a pipeline config with Jev as stage 1 under a named policy. A new version is
- * created only when the active one differs.
- */
-export async function setupJevPipeline(
-  db: Kysely<DB>,
-  opts: {
-    batteryShortName: string;
-    policy: Policy;
-    /** Ollama model for stage 2; null means no stage 2, unsure comments wait for a human */
-    stage2Model: string | null;
-  },
-): Promise<{ pipelineConfigId: number; created: boolean }> {
-  const provider = await ensureJevProvider(db, opts.batteryShortName);
-  const policyId = await ensurePolicy(db, opts.policy);
-  const judge = opts.stage2Model ? await ensureOllamaJudge(db, opts.stage2Model) : null;
+export const LAYA_DEFAULT_URL = 'http://localhost:8000';
 
+/** The config row for a Laya checkpoint served by laya-serve, on battery v2. */
+export async function ensureLayaProvider(
+  db: Kysely<DB>,
+  env: ProviderEnv,
+  model: string,
+): Promise<Selectable<ProviderConfigsTable>> {
+  const battery = await ensureBattery(db, 'v2');
+  const name = `laya-${model}@v2.${battery.battery.version}`;
+  const found = await db
+    .selectFrom('provider_configs')
+    .selectAll()
+    .where('name', '=', name)
+    .executeTakeFirst();
+  if (found) return found;
+  return db
+    .insertInto('provider_configs')
+    .values({
+      name,
+      kind: 'systemone',
+      base_url: env.layaUrl ?? LAYA_DEFAULT_URL,
+      model,
+      battery_id: battery.id,
+      is_local: true,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+}
+
+export interface PipelineSpec {
+  s1Primary: number;
+  s1Parallel?: number[];
+  s1Combiner?: 'primary_only' | 'all_agree_else_unsure';
+  s2Primary: number | null;
+  shadows?: number[];
+  policyId: number;
+}
+
+/** The active pipeline config row, if any. */
+export async function activePipelineRow(db: Kysely<DB>) {
+  return db
+    .selectFrom('pipeline_configs')
+    .selectAll()
+    .where('activated_at', 'is not', null)
+    .where('deactivated_at', 'is', null)
+    .orderBy('version', 'desc')
+    .executeTakeFirst();
+}
+
+/**
+ * Activate a pipeline config. Configs are immutable versions: a new row is created only
+ * when the active one differs, and the old one is deactivated, never changed.
+ */
+export async function activatePipeline(
+  db: Kysely<DB>,
+  spec: PipelineSpec,
+  actorId = SYSTEM_ACTOR_ID,
+): Promise<{ pipelineConfigId: number; created: boolean }> {
+  const same = (a: number[], b: number[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const parallel = spec.s1Parallel ?? [];
+  const shadows = spec.shadows ?? [];
+  const combiner = spec.s1Combiner ?? 'primary_only';
   return db.transaction().execute(async (trx) => {
-    const active = await trx
-      .selectFrom('pipeline_configs')
-      .selectAll()
-      .where('activated_at', 'is not', null)
-      .where('deactivated_at', 'is', null)
-      .orderBy('version', 'desc')
-      .executeTakeFirst();
+    const active = await activePipelineRow(trx);
     if (
       active &&
-      active.s1_primary === provider.id &&
-      active.policy_id === policyId &&
-      active.s2_primary === (judge?.id ?? null)
+      active.s1_primary === spec.s1Primary &&
+      active.policy_id === spec.policyId &&
+      active.s2_primary === spec.s2Primary &&
+      active.s1_combiner === combiner &&
+      same(active.s1_parallel, parallel) &&
+      same(active.shadows, shadows)
     ) {
       return { pipelineConfigId: active.id, created: false };
     }
@@ -317,14 +397,44 @@ export async function setupJevPipeline(
       .insertInto('pipeline_configs')
       .values({
         version: (latest?.v ?? 0) + 1,
-        s1_primary: provider.id,
-        s2_primary: judge?.id ?? null,
-        policy_id: policyId,
+        s1_primary: spec.s1Primary,
+        s1_parallel: parallel,
+        s1_combiner: combiner,
+        s2_primary: spec.s2Primary,
+        shadows,
+        policy_id: spec.policyId,
         activated_at: new Date(),
-        activated_by: SYSTEM_ACTOR_ID,
+        activated_by: actorId,
       })
       .returning('id')
       .executeTakeFirstOrThrow();
     return { pipelineConfigId: row.id, created: true };
+  });
+}
+
+/**
+ * Activate Jev as stage 1 under a named policy, keeping any parallel or shadow providers
+ * of the active config. A new version is created only when something differs.
+ */
+export async function setupJevPipeline(
+  db: Kysely<DB>,
+  opts: {
+    batteryShortName: string;
+    policy: Policy;
+    /** Ollama model for stage 2; null means no stage 2, unsure comments wait for a human */
+    stage2Model: string | null;
+  },
+): Promise<{ pipelineConfigId: number; created: boolean }> {
+  const provider = await ensureJevProvider(db, opts.batteryShortName);
+  const policyId = await ensurePolicy(db, opts.policy);
+  const judge = opts.stage2Model ? await ensureOllamaJudge(db, opts.stage2Model) : null;
+  const active = await activePipelineRow(db);
+  return activatePipeline(db, {
+    s1Primary: provider.id,
+    s1Parallel: active?.s1_parallel ?? [],
+    s1Combiner: active?.s1_combiner ?? 'primary_only',
+    s2Primary: judge?.id ?? null,
+    shadows: active?.shadows ?? [],
+    policyId,
   });
 }

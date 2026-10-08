@@ -97,3 +97,10 @@ analytics are simple queries on it. See `packages/server/migrations/`.
   become proposals. MCP over streamable HTTP at `/mcp` and over stdio through the
   `kommentarwache-mcp` package. Skills and plugin manifests for Claude Code, Cowork,
   Codex, ChatGPT and opencode. See `docs/agents.md`.
+- Milestone 7: the Laya migration. Stage 1 takes parallel members (a disagreement becomes
+  unsure under `all_agree_else_unsure`) and shadow members (recorded as non-effective
+  decisions; a disagreement involving a violation becomes a `shadow_diff` queue item).
+  `kw dataset export` writes Laya training data with human verdicts mapped onto the
+  questions and a frozen test split; `kw laya gate` scores a checkpoint against labels
+  and the primary into `evaluations`; `kw laya shadow | promote | rollback` are pipeline
+  config versions. See `training/README.md`.
