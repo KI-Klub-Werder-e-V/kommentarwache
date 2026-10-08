@@ -12,7 +12,7 @@ import type { DB } from '../db/types.js';
 import { reportConnector, type ConnectorReport } from './report.js';
 import { ingestComment } from '../pipeline/ingest.js';
 import { ProviderFailed, runStage1 } from '../pipeline/stage1.js';
-import { route } from '../policy/policy.js';
+import { route, mapperName } from '../policy/policy.js';
 import type { DecisionProvider } from '../providers/provider.js';
 import { buildProvider, ensureBattery, ensureJevProvider, ensurePolicy, type ProviderEnv } from '../providers/registry.js';
 
@@ -153,7 +153,7 @@ export async function replay(db: Kysely<DB>, connectorName: string, policy: Poli
   const routed = new Map<number, { id: string; verdict: Verdict; reasons: string[] }>();
   for (const r of rows) {
     if (!r.answers) continue;
-    const mapper = r.mapper === 'v1' ? 'v1' : 'v2';
+    const mapper = mapperName(r.mapper);
     const routing = route(mapper, r.answers, policy);
     verdicts[routing.verdict]++;
     routed.set(r.comment_id, { id: r.platform_comment_id, verdict: routing.verdict, reasons: routing.reasons });

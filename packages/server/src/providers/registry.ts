@@ -5,8 +5,9 @@
  */
 
 import type { Kysely, Selectable } from 'kysely';
-import { PolicySchema, type Battery, type Policy } from '@kommentarwache/contract';
+import { PolicySchema, type Battery, type Policy, type MapperName } from '@kommentarwache/contract';
 import { applyLadder } from '../actions/engine.js';
+import { mapperName } from '../policy/policy.js';
 import type { ConnectorRegistry } from '../connectors/connector.js';
 import { defaultConnectorRegistry } from '../connectors/registry.js';
 import { secretKeyFromEnv } from '../connectors/secrets.js';
@@ -15,6 +16,8 @@ import type { AfterDecision, EnqueueStage2, Stage1Member } from '../pipeline/sta
 import { OllamaJudgeProvider, type JudgeProvider } from './llmjudge.js';
 import { BATTERIES } from '../batteries/index.js';
 import { SYSTEM_ACTOR_ID, type DB, type ProviderConfigsTable } from '../db/types.js';
+import { OllamaGuardProvider } from './guard.js';
+import { OpenAIModerationProvider } from './openai.js';
 import type { DecisionProvider } from './provider.js';
 import {
   JEV_BASE_URL,
@@ -31,6 +34,7 @@ export interface ProviderEnv {
   /** decoded KW_SECRET_KEY, when set */
   secretKey?: Buffer | undefined;
   layaUrl?: string | undefined;
+  openaiApiKey?: string | undefined;
 }
 
 export const OLLAMA_DEFAULT_URL = 'http://localhost:11434';
@@ -44,6 +48,7 @@ export function envFromProcess(): ProviderEnv {
     ollamaModel: process.env['OLLAMA_MODEL'],
     secretKey: process.env['KW_SECRET_KEY'] ? secretKeyFromEnv() : undefined,
     layaUrl: process.env['LAYA_URL'],
+    openaiApiKey: process.env['OPENAI_API_KEY'],
   };
 }
 
@@ -100,6 +105,22 @@ export function buildProvider(
         isLocal: !isJev,
       });
     }
+    case 'ollama_guard':
+      return new OllamaGuardProvider({
+        configId: row.id,
+        name: row.name,
+        baseUrl: row.base_url ?? env.ollamaUrl ?? OLLAMA_DEFAULT_URL,
+        model: row.model ?? 'llama-guard3:1b',
+      });
+    case 'openai_moderation':
+      if (!env.openaiApiKey)
+        throw new Error('OPENAI_API_KEY is not set (needed for OpenAI moderation)');
+      return new OpenAIModerationProvider({
+        configId: row.id,
+        name: row.name,
+        apiKey: env.openaiApiKey,
+        ...(row.model ? { model: row.model } : {}),
+      });
     default:
       throw new Error(`provider kind ${row.kind} is not implemented yet`);
   }
@@ -108,7 +129,7 @@ export function buildProvider(
 export async function ensureBattery(
   db: Kysely<DB>,
   shortName: string,
-): Promise<{ id: number; battery: Battery; mapper: 'v1' | 'v2' }> {
+): Promise<{ id: number; battery: Battery; mapper: MapperName }> {
   const known = BATTERIES[shortName];
   if (!known)
     throw new Error(`unknown battery ${shortName}; known: ${Object.keys(BATTERIES).join(', ')}`);
@@ -190,7 +211,7 @@ export interface ActivePipeline {
   pipelineConfigId: number;
   provider: DecisionProvider;
   batteryId: number;
-  mapper: 'v1' | 'v2';
+  mapper: MapperName;
   policy: Policy;
   policyId: number;
   /** absent when no stage-2 judge is configured: unsure comments then wait for a human */
@@ -229,7 +250,7 @@ export async function buildStage1Member(
   return {
     provider: buildProvider(row, battery, env),
     batteryId: batteryRow.id,
-    mapper: batteryRow.mapper === 'v1' ? 'v1' : 'v2',
+    mapper: mapperName(batteryRow.mapper),
   };
 }
 
@@ -280,7 +301,7 @@ export async function loadActivePipeline(
         .executeTakeFirstOrThrow()
     : undefined;
 
-  const mapper = batteryRow.mapper === 'v1' ? 'v1' : 'v2';
+  const mapper = mapperName(batteryRow.mapper);
   const battery: Battery = {
     name: batteryRow.name,
     version: batteryRow.version,
@@ -437,4 +458,91 @@ export async function setupJevPipeline(
     shadows: active?.shadows ?? [],
     policyId,
   });
+}
+
+/** A pseudo-battery row that only carries the mapper for a score-style provider. */
+async function ensureMapperBattery(
+  db: Kysely<DB>,
+  name: string,
+  mapper: 'guard' | 'openai',
+): Promise<number> {
+  const found = await db
+    .selectFrom('batteries')
+    .select('id')
+    .where('name', '=', name)
+    .where('version', '=', 1)
+    .executeTakeFirst();
+  if (found) return found.id;
+  const row = await db
+    .insertInto('batteries')
+    .values({ name, version: 1, questions: JSON.stringify({}), mapper })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  return row.id;
+}
+
+/** The config row for Llama Guard (or another guard model) on Ollama. */
+export async function ensureGuardProvider(
+  db: Kysely<DB>,
+  model: string,
+): Promise<Selectable<ProviderConfigsTable>> {
+  const name = `guard:${model}`;
+  const found = await db
+    .selectFrom('provider_configs')
+    .selectAll()
+    .where('name', '=', name)
+    .executeTakeFirst();
+  if (found) return found;
+  const batteryId = await ensureMapperBattery(db, 'guard', 'guard');
+  return db
+    .insertInto('provider_configs')
+    .values({ name, kind: 'ollama_guard', model, battery_id: batteryId, is_local: true })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+}
+
+/** The config row for OpenAI's moderation endpoint. */
+export async function ensureOpenAIModerationProvider(
+  db: Kysely<DB>,
+  model = 'omni-moderation-latest',
+): Promise<Selectable<ProviderConfigsTable>> {
+  const name = `openai-moderation:${model}`;
+  const found = await db
+    .selectFrom('provider_configs')
+    .selectAll()
+    .where('name', '=', name)
+    .executeTakeFirst();
+  if (found) return found;
+  const batteryId = await ensureMapperBattery(db, 'openai-moderation', 'openai');
+  return db
+    .insertInto('provider_configs')
+    .values({ name, kind: 'openai_moderation', model, battery_id: batteryId })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+}
+
+/** Add any provider config as a stage-1 shadow or parallel member of the active pipeline. */
+export async function addStage1Member(
+  db: Kysely<DB>,
+  providerConfigId: number,
+  role: 'shadow' | 'parallel',
+  actorId = SYSTEM_ACTOR_ID,
+): Promise<{ pipelineConfigId: number; created: boolean }> {
+  const active = await activePipelineRow(db);
+  if (!active?.s1_primary || !active.policy_id)
+    throw new Error('no active pipeline; run `kw setup` first');
+  const add = (list: number[]) =>
+    list.includes(providerConfigId) ? list : [...list, providerConfigId];
+  return activatePipeline(
+    db,
+    {
+      s1Primary: active.s1_primary,
+      s1Parallel: role === 'parallel' ? add(active.s1_parallel) : active.s1_parallel,
+      s1Combiner: role === 'parallel' ? 'all_agree_else_unsure' : active.s1_combiner,
+      s2Primary: active.s2_primary,
+      shadows: role === 'shadow' ? add(active.shadows) : active.shadows,
+      policyId: active.policy_id,
+    },
+    actorId,
+  );
 }

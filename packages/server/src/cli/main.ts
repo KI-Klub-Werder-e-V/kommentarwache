@@ -40,7 +40,13 @@ import { startWorker } from '../worker.js';
 import { datasetReadiness, exportDataset } from '../laya/export.js';
 import { runGate } from '../laya/gate.js';
 import { layaPromote, layaRollback, layaShadow } from '../laya/pipeline.js';
-import { buildStage1Member, ensureLayaProvider } from '../providers/registry.js';
+import {
+  addStage1Member,
+  buildStage1Member,
+  ensureGuardProvider,
+  ensureLayaProvider,
+  ensureOpenAIModerationProvider,
+} from '../providers/registry.js';
 import pino from 'pino';
 
 function policyByName(name: string) {
@@ -445,6 +451,41 @@ async function main(argv: string[]): Promise<number> {
             );
         }
       }
+      case 'provider': {
+        const { values, positionals } = parseArgs({
+          args: rest,
+          allowPositionals: true,
+          options: {
+            kind: { type: 'string' },
+            model: { type: 'string' },
+            role: { type: 'string', default: 'shadow' },
+          },
+        });
+        if (positionals[0] !== 'add' || !values.kind) {
+          throw new Error(
+            'usage: kw provider add --kind guard|openai|laya [--model m] [--role shadow|parallel]',
+          );
+        }
+        const env = envFromProcess();
+        const row =
+          values.kind === 'guard'
+            ? await ensureGuardProvider(handle.db, values.model ?? 'llama-guard3:1b')
+            : values.kind === 'openai'
+              ? await ensureOpenAIModerationProvider(handle.db, values.model)
+              : values.kind === 'laya'
+                ? await ensureLayaProvider(handle.db, env, values.model ?? 'multilingual')
+                : null;
+        if (!row) throw new Error('kind must be guard, openai or laya');
+        if (values.role !== 'shadow' && values.role !== 'parallel')
+          throw new Error('role must be shadow or parallel');
+        const r = await addStage1Member(handle.db, row.id, values.role);
+        console.log(
+          r.created
+            ? `pipeline config ${r.pipelineConfigId}: ${row.name} added as ${values.role}`
+            : `${row.name} is already a ${values.role}`,
+        );
+        return 0;
+      }
       case 'dataset': {
         const { values, positionals } = parseArgs({
           args: rest,
@@ -532,6 +573,8 @@ function usage(): string {
   dataset export --out <file>   Laya training JSONL from stored answers and human decisions
       [--since YYYY-MM-DD]
   dataset readiness             how far the labels are from the training targets
+  provider add                  add Llama Guard, OpenAI moderation or Laya as a stage-1 member
+      --kind guard|openai|laya [--model m] [--role shadow|parallel]
   moderator create              create a dashboard account
       --email <e> --name <n> [--password <pw> | $KW_MODERATOR_PASSWORD]
   audit verify                  check the audit log's hash chain

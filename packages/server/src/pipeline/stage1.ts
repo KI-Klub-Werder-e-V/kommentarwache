@@ -12,6 +12,7 @@ import {
   type Policy,
   type Routing,
   type Verdict,
+  type MapperName,
 } from '@kommentarwache/contract';
 import { SYSTEM_ACTOR_ID, type DB } from '../db/types.js';
 import { route } from '../policy/policy.js';
@@ -20,7 +21,7 @@ import type { DecisionProvider } from '../providers/provider.js';
 export interface Stage1Context {
   provider: DecisionProvider;
   batteryId: number;
-  mapper: 'v1' | 'v2';
+  mapper: MapperName;
   policy: Policy;
   policyId: number;
   pipelineConfigId?: number | null;
@@ -38,7 +39,7 @@ export interface Stage1Context {
 export interface Stage1Member {
   provider: DecisionProvider;
   batteryId: number;
-  mapper: 'v1' | 'v2';
+  mapper: MapperName;
 }
 
 export type AfterDecision = (t: {

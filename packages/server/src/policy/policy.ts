@@ -8,8 +8,11 @@
 
 import {
   higherVerdict,
+  MapperNameSchema,
   type ActionsPolicy,
   type Answers,
+  type MapperName,
+  type ScoreThresholds,
   type Category,
   type Policy,
   type Routing,
@@ -17,6 +20,7 @@ import {
   type V2Thresholds,
   type Verdict,
 } from '@kommentarwache/contract';
+import { routeGuard, routeOpenAI } from './scores.js';
 import { STAGE2_DEFAULT } from './stage2.js';
 import { routeV2, toV2Answers } from './v2.js';
 
@@ -37,7 +41,7 @@ const V2_DEFAULT: V2Thresholds = {
 };
 
 /** The prototype's four named policies, in the new vocabulary, plus v2 thresholds. */
-const NAMED: Record<string, Omit<Policy, 'stage2' | 'actions'>> = {
+const NAMED: Record<string, Omit<Policy, 'stage2' | 'actions' | 'guard' | 'openai'>> = {
   // Default. Hostility alone only earns a second look; the graded severity scale decides
   // what is a violation. Mild rudeness is unsure, harassment and threats are violations.
   severity_led: {
@@ -104,20 +108,43 @@ export const ACTIONS_DEFAULT: ActionsPolicy = {
   strikeWindowDays: 30,
 };
 
+/** Guard-style providers: one probability of harm, or the highest category score. */
+export const SCORE_DEFAULT: ScoreThresholds = { violation: 0.8, unsure: 0.4 };
+
 /** Every named policy shares the default stage-2 wording and ladder; only thresholds differ. */
 export const POLICIES: Record<string, Policy> = Object.fromEntries(
   Object.entries(NAMED).map(([name, p]) => [
     name,
-    { ...p, stage2: STAGE2_DEFAULT, actions: ACTIONS_DEFAULT },
+    {
+      ...p,
+      guard: SCORE_DEFAULT,
+      openai: SCORE_DEFAULT,
+      stage2: STAGE2_DEFAULT,
+      actions: ACTIONS_DEFAULT,
+    },
   ]),
 );
 export const DEFAULT_POLICY = 'severity_led';
 
 /** Route answers with the mapper that belongs to the battery they came from. */
-export function route(mapper: 'v1' | 'v2', answers: Answers, policy: Policy): Routing {
-  return mapper === 'v1'
-    ? routeV1(toV1Answers(answers), policy)
-    : routeV2(toV2Answers(answers), policy);
+export function route(mapper: MapperName, answers: Answers, policy: Policy): Routing {
+  switch (mapper) {
+    case 'v1':
+      return routeV1(toV1Answers(answers), policy);
+    case 'v2':
+      return routeV2(toV2Answers(answers), policy);
+    case 'guard':
+      return routeGuard(answers, policy);
+    case 'openai':
+      return routeOpenAI(answers, policy);
+  }
+}
+
+/** A stored mapper name, checked. */
+export function mapperName(s: string): MapperName {
+  const parsed = MapperNameSchema.safeParse(s);
+  if (!parsed.success) throw new Error(`unknown mapper ${s}`);
+  return parsed.data;
 }
 
 /** The answers battery v1 produces. Question ids match the prototype's questions.py. */

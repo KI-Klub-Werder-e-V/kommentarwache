@@ -91,10 +91,27 @@ export const ActionsPolicySchema = z.object({
 });
 export type ActionsPolicy = z.infer<typeof ActionsPolicySchema>;
 
+/**
+ * Thresholds for guard-style providers that give one probability of "unsafe" (Llama
+ * Guard) or per-category scores (OpenAI moderation). They run as parallel or shadow
+ * members; the verdict comes from the highest relevant score.
+ */
+export const ScoreThresholdsSchema = z.object({
+  violation: z.number().min(0).max(1),
+  unsure: z.number().min(0).max(1),
+});
+export type ScoreThresholds = z.infer<typeof ScoreThresholdsSchema>;
+
+/** Which routing function turns a provider's answers into a verdict. */
+export const MapperNameSchema = z.enum(['v1', 'v2', 'guard', 'openai']);
+export type MapperName = z.infer<typeof MapperNameSchema>;
+
 export const PolicySchema = z.object({
   name: z.string().min(1),
   v1: V1ThresholdsSchema,
   v2: V2ThresholdsSchema,
+  guard: ScoreThresholdsSchema,
+  openai: ScoreThresholdsSchema,
   stage2: Stage2PolicySchema,
   actions: ActionsPolicySchema,
 });

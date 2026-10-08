@@ -103,4 +103,7 @@ analytics are simple queries on it. See `packages/server/migrations/`.
   `kw dataset export` writes Laya training data with human verdicts mapped onto the
   questions and a frozen test split; `kw laya gate` scores a checkpoint against labels
   and the primary into `evaluations`; `kw laya shadow | promote | rollback` are pipeline
-  config versions. See `training/README.md`.
+  config versions. See `training/README.md`. Two more stage-1 providers for parallel or
+  shadow use: Llama Guard through Ollama (raw prompt with our four categories, P(unsafe)
+  from the first token's log-probabilities) and OpenAI's moderation endpoint (per-category
+  scores), each with its own router and thresholds; `kw provider add --kind guard|openai`.
