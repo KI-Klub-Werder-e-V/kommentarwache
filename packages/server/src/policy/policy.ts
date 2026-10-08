@@ -16,6 +16,7 @@ import {
   type V2Thresholds,
   type Verdict,
 } from '@kommentarwache/contract';
+import { STAGE2_DEFAULT } from './stage2.js';
 import { routeV2, toV2Answers } from './v2.js';
 
 export { expectedSeverity, routeV2, toV2Answers } from './v2.js';
@@ -35,7 +36,7 @@ const V2_DEFAULT: V2Thresholds = {
 };
 
 /** The prototype's four named policies, in the new vocabulary, plus v2 thresholds. */
-export const POLICIES: Record<string, Policy> = {
+const NAMED: Record<string, Omit<Policy, 'stage2'>> = {
   // Default. Hostility alone only earns a second look; the graded severity scale decides
   // what is a violation. Mild rudeness is unsure, harassment and threats are violations.
   severity_led: {
@@ -93,6 +94,11 @@ export const POLICIES: Record<string, Policy> = {
     v2: V2_DEFAULT,
   },
 };
+
+/** Every named policy shares the default stage-2 wording; only thresholds differ. */
+export const POLICIES: Record<string, Policy> = Object.fromEntries(
+  Object.entries(NAMED).map(([name, p]) => [name, { ...p, stage2: STAGE2_DEFAULT }]),
+);
 export const DEFAULT_POLICY = 'severity_led';
 
 /** Route answers with the mapper that belongs to the battery they came from. */

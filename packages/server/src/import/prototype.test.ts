@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testDb, type TestDb } from '../test/db.js';
-import { importPrototype, reportConnector } from './prototype.js';
+import { reportConnector } from '../eval/report.js';
+import { importPrototype } from './prototype.js';
 
 // Jev's raw answers for the 24 synthetic comments, as recorded by the prototype.
 const SYNTHETIC = fileURLToPath(
@@ -27,7 +28,11 @@ describe('importPrototype', () => {
 
     const report = await reportConnector(t.db, 'synthetic');
     expect(report.comments).toBe(24);
-    expect(report.agreement).toEqual([{ source: 'expected', agree: 23, total: 24 }]);
+    expect(report.agreement).toEqual([
+      { source: 'expected', stage: 'final', agree: 23, total: 24 },
+      { source: 'expected', stage: 's1', agree: 23, total: 24 },
+    ]);
+    expect(report.final).toMatchObject({ closed: 24, humanPending: 0, stillPending: 0 });
   });
 
   it('stores the raw answers so a policy can be replayed later', async () => {
@@ -63,6 +68,9 @@ describe('importPrototype', () => {
     });
     expect(summary.verdicts).toEqual({ ok: 14, unsure: 0, violation: 10 });
     const report = await reportConnector(t.db, 'synthetic-strict');
-    expect(report.agreement).toEqual([{ source: 'expected', agree: 20, total: 24 }]);
+    expect(report.agreement).toEqual([
+      { source: 'expected', stage: 'final', agree: 20, total: 24 },
+      { source: 'expected', stage: 's1', agree: 20, total: 24 },
+    ]);
   });
 });

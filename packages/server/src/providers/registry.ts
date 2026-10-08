@@ -5,7 +5,10 @@
  */
 
 import type { Kysely, Selectable } from 'kysely';
-import type { Battery, Policy } from '@kommentarwache/contract';
+import { PolicySchema, type Battery, type Policy } from '@kommentarwache/contract';
+import { makeEnqueueStage2 } from '../pipeline/queue.js';
+import type { EnqueueStage2 } from '../pipeline/stage1.js';
+import { OllamaJudgeProvider, type JudgeProvider } from './llmjudge.js';
 import { BATTERIES } from '../batteries/index.js';
 import { SYSTEM_ACTOR_ID, type DB, type ProviderConfigsTable } from '../db/types.js';
 import type { DecisionProvider } from './provider.js';
@@ -19,13 +22,49 @@ import {
 export interface ProviderEnv {
   typesafeApiKey?: string | undefined;
   layaApiKey?: string | undefined;
+  ollamaUrl?: string | undefined;
+  ollamaModel?: string | undefined;
 }
+
+export const OLLAMA_DEFAULT_URL = 'http://localhost:11434';
+export const OLLAMA_DEFAULT_MODEL = 'gemma4:12b-it-qat';
 
 export function envFromProcess(): ProviderEnv {
   return {
     typesafeApiKey: process.env['TYPESAFE_API_KEY'],
     layaApiKey: process.env['LAYA_API_KEY'],
+    ollamaUrl: process.env['OLLAMA_URL'],
+    ollamaModel: process.env['OLLAMA_MODEL'],
   };
+}
+
+export function buildJudge(row: Selectable<ProviderConfigsTable>, env: ProviderEnv): JudgeProvider {
+  if (row.kind !== 'llm_judge') throw new Error(`provider ${row.name} is not a stage-2 judge`);
+  return new OllamaJudgeProvider({
+    configId: row.id,
+    name: row.name,
+    baseUrl: row.base_url ?? env.ollamaUrl ?? OLLAMA_DEFAULT_URL,
+    model: row.model ?? env.ollamaModel ?? OLLAMA_DEFAULT_MODEL,
+  });
+}
+
+/** The config row for a stage-2 judge on Ollama. One row per model; the URL comes from env. */
+export async function ensureOllamaJudge(
+  db: Kysely<DB>,
+  model: string,
+): Promise<Selectable<ProviderConfigsTable>> {
+  const name = `ollama-judge:${model}`;
+  const found = await db
+    .selectFrom('provider_configs')
+    .selectAll()
+    .where('name', '=', name)
+    .executeTakeFirst();
+  if (found) return found;
+  return db
+    .insertInto('provider_configs')
+    .values({ name, kind: 'llm_judge', model, is_local: true })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 }
 
 export function buildProvider(
@@ -84,20 +123,26 @@ export async function ensureBattery(
   return { id: row.id, ...known };
 }
 
+/**
+ * Policy rows are immutable versions. The row whose spec equals the given policy is
+ * reused; any difference, even one threshold, becomes the next version of that name.
+ */
 export async function ensurePolicy(db: Kysely<DB>, policy: Policy): Promise<number> {
-  const found = await db
+  const versions = await db
     .selectFrom('policies')
-    .select('id')
+    .select(['id', 'version', 'spec'])
     .where('name', '=', policy.name)
-    .where('version', '=', 1)
-    .executeTakeFirst();
-  if (found) return found.id;
+    .orderBy('version', 'desc')
+    .execute();
+  const wanted = JSON.stringify(policy);
+  const same = versions.find((v) => JSON.stringify(v.spec) === wanted);
+  if (same) return same.id;
   const row = await db
     .insertInto('policies')
     .values({
       name: policy.name,
-      version: 1,
-      spec: JSON.stringify(policy),
+      version: (versions[0]?.version ?? 0) + 1,
+      spec: wanted,
       created_by: SYSTEM_ACTOR_ID,
     })
     .returning('id')
@@ -139,9 +184,12 @@ export interface ActivePipeline {
   mapper: 'v1' | 'v2';
   policy: Policy;
   policyId: number;
+  /** absent when no stage-2 judge is configured: unsure comments then wait for a human */
+  judge?: JudgeProvider;
+  enqueueStage2: EnqueueStage2;
 }
 
-/** The active pipeline config with its stage-1 provider built and ready. */
+/** The active pipeline config with its providers built and ready. */
 export async function loadActivePipeline(
   db: Kysely<DB>,
   env: ProviderEnv,
@@ -172,6 +220,20 @@ export async function loadActivePipeline(
     .selectAll()
     .where('id', '=', config.policy_id)
     .executeTakeFirstOrThrow();
+  const policy = PolicySchema.safeParse(policyRow.spec);
+  if (!policy.success) {
+    throw new Error(
+      `policy ${policyRow.name} v${policyRow.version} predates the current policy schema; run \`kw setup\``,
+    );
+  }
+
+  const judgeRow = config.s2_primary
+    ? await db
+        .selectFrom('provider_configs')
+        .selectAll()
+        .where('id', '=', config.s2_primary)
+        .executeTakeFirstOrThrow()
+    : undefined;
 
   const mapper = batteryRow.mapper === 'v1' ? 'v1' : 'v2';
   const battery: Battery = {
@@ -184,8 +246,10 @@ export async function loadActivePipeline(
     provider: buildProvider(providerRow, battery, env),
     batteryId: batteryRow.id,
     mapper,
-    policy: policyRow.spec,
+    policy: policy.data,
     policyId: policyRow.id,
+    ...(judgeRow ? { judge: buildJudge(judgeRow, env) } : {}),
+    enqueueStage2: makeEnqueueStage2(),
   };
 }
 
@@ -195,10 +259,16 @@ export async function loadActivePipeline(
  */
 export async function setupJevPipeline(
   db: Kysely<DB>,
-  opts: { batteryShortName: string; policy: Policy },
+  opts: {
+    batteryShortName: string;
+    policy: Policy;
+    /** Ollama model for stage 2; null means no stage 2, unsure comments wait for a human */
+    stage2Model: string | null;
+  },
 ): Promise<{ pipelineConfigId: number; created: boolean }> {
   const provider = await ensureJevProvider(db, opts.batteryShortName);
   const policyId = await ensurePolicy(db, opts.policy);
+  const judge = opts.stage2Model ? await ensureOllamaJudge(db, opts.stage2Model) : null;
 
   return db.transaction().execute(async (trx) => {
     const active = await trx
@@ -208,7 +278,12 @@ export async function setupJevPipeline(
       .where('deactivated_at', 'is', null)
       .orderBy('version', 'desc')
       .executeTakeFirst();
-    if (active && active.s1_primary === provider.id && active.policy_id === policyId) {
+    if (
+      active &&
+      active.s1_primary === provider.id &&
+      active.policy_id === policyId &&
+      active.s2_primary === (judge?.id ?? null)
+    ) {
       return { pipelineConfigId: active.id, created: false };
     }
     if (active) {
@@ -227,6 +302,7 @@ export async function setupJevPipeline(
       .values({
         version: (latest?.v ?? 0) + 1,
         s1_primary: provider.id,
+        s2_primary: judge?.id ?? null,
         policy_id: policyId,
         activated_at: new Date(),
         activated_by: SYSTEM_ACTOR_ID,

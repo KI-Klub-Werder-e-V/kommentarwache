@@ -6,9 +6,11 @@ LLM, acts on obvious violations itself, and sends only ambiguous comments to a l
 review dashboard. Every model decision is logged, and the same API is available to
 coding agents through MCP.
 
-Status: milestone 1 of 8. Stage 1 works end to end against Jev: `POST /v1/moderate`
-returns a verdict, everything is stored and replayable, and the eval harness reports
-agreement with labelled sets (see `eval/README.md`). No stage 2, dashboard, actions or
+Status: milestone 2 of 8. The two-stage pipeline works end to end: `POST /v1/moderate`
+answers with Jev's verdict at once, a background worker sends unsure comments to a local
+text LLM through Ollama, and what both leave unsure lands in the human queue (as rows;
+the dashboard is milestone 3). Everything is stored and replayable, and the eval harness
+reports agreement with labelled sets (see `eval/README.md`). No dashboard, actions or
 platform connectors yet. The plan is in `docs/plan.md`.
 
 ## Design in one paragraph
@@ -44,6 +46,13 @@ curl -s localhost:8080/v1/moderate \
 The answer carries the verdict (`ok`, `unsure` or `violation`), the category, the reasons
 with their thresholds, and the state: `closed`, or `s2_pending` for anything that needs a
 second look. The OpenAPI document is at `/openapi.json`.
+
+Stage 2 needs Ollama with the model from `OLLAMA_MODEL` pulled (`ollama pull
+gemma4:12b-it-qat`). The server runs the worker in-process; `kw worker` runs one
+separately. On a 16-core workstation CPU, `gemma4:12b` took about 20 s per comment once
+loaded (70 s for the first, including the load); expect more on an older server. Only
+the unsure band pays that price, and a comment that is not answered within the policy's
+deadline (15 minutes by default) goes to the human queue instead.
 
 ## Development
 

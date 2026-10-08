@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CategorySchema, VerdictSchema } from './verdict.js';
 
 /**
  * Thresholds for routing battery v1 answers (sentiment, hostile, target, severity).
@@ -47,9 +48,38 @@ export const V2ThresholdsSchema = z.object({
 });
 export type V2Thresholds = z.infer<typeof V2ThresholdsSchema>;
 
+/** One worked example the stage-2 text LLM sees alongside the policy text. */
+export const Stage2ExampleSchema = z.object({
+  text: z.string().min(1),
+  verdict: VerdictSchema,
+  category: CategorySchema,
+  why: z.string().min(1),
+});
+export type Stage2Example = z.infer<typeof Stage2ExampleSchema>;
+
+/**
+ * Stage 2: a general text LLM reads the policy, a few examples and the thread context,
+ * and gives an independent verdict for comments stage 1 found unsure. Its verdict is
+ * accepted only above a confidence line; below it, the comment stays unsure and goes
+ * to a human.
+ */
+export const Stage2PolicySchema = z.object({
+  /** the community policy as the LLM reads it */
+  policyText: z.string().min(1),
+  examples: z.array(Stage2ExampleSchema),
+  /** P(violation) at or above this accepts a violation verdict */
+  violationConfidence: z.number().min(0).max(1),
+  /** P(ok) at or above this accepts an ok verdict */
+  okConfidence: z.number().min(0).max(1),
+  /** a comment must leave stage 2 within this many seconds or it goes to a human */
+  deadlineSeconds: z.number().int().positive(),
+});
+export type Stage2Policy = z.infer<typeof Stage2PolicySchema>;
+
 export const PolicySchema = z.object({
   name: z.string().min(1),
   v1: V1ThresholdsSchema,
   v2: V2ThresholdsSchema,
+  stage2: Stage2PolicySchema,
 });
 export type Policy = z.infer<typeof PolicySchema>;

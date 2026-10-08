@@ -9,7 +9,7 @@ import type { Kysely } from 'kysely';
 import { fromLegacyVerdict, LegacyVerdictSchema, VerdictSchema, type Policy, type Verdict } from '@kommentarwache/contract';
 import { z } from 'zod';
 import type { DB } from '../db/types.js';
-import { reportConnector, type ConnectorReport } from '../import/prototype.js';
+import { reportConnector, type ConnectorReport } from './report.js';
 import { ingestComment } from '../pipeline/ingest.js';
 import { ProviderFailed, runStage1 } from '../pipeline/stage1.js';
 import { route } from '../policy/policy.js';

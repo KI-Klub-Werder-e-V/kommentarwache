@@ -72,3 +72,7 @@ analytics are simple queries on it. See `packages/server/migrations/`.
   (choice-only: sentiment, attack, target, severity, spam) with its router, idempotent
   ingest and stage 1, `POST /v1/moderate` with API tokens and an OpenAPI document, and the
   eval harness (`kw eval`, `kw replay`, `kw labels import`). Results in `eval/README.md`.
+- Milestone 2: stage 2 through Ollama with a JSON schema and log-probability confidence,
+  the combination table above as code, jobs on graphile-worker enqueued in the same
+  transaction as the decision (stage 2 serial, most harmful first), deadlines with a
+  reconciler every minute, and `kw stage2-run` for evaluation.

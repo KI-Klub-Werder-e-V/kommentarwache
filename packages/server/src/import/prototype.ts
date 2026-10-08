@@ -246,58 +246,6 @@ export async function importPrototype(db: Kysely<DB>, opts: ImportOptions): Prom
   });
 }
 
-export interface ConnectorReport {
-  connector: string;
-  comments: number;
-  s1: Record<Verdict, number>;
-  agreement: Array<{ source: string; agree: number; total: number }>;
-}
-
-/** Verdict counts and agreement with every label source, the prototype's parity numbers. */
-export async function reportConnector(
-  db: Kysely<DB>,
-  connectorName: string,
-): Promise<ConnectorReport> {
-  const connector = await db
-    .selectFrom('connectors')
-    .select('id')
-    .where('name', '=', connectorName)
-    .executeTakeFirstOrThrow(() => new Error(`no connector named ${connectorName}`));
-
-  const outcomes = await db
-    .selectFrom('comment_outcomes')
-    .select(['comment_id', 's1_verdict'])
-    .where('connector_id', '=', connector.id)
-    .execute();
-  const s1: Record<Verdict, number> = { ok: 0, unsure: 0, violation: 0 };
-  const byComment = new Map<number, Verdict | null>();
-  for (const o of outcomes) {
-    if (o.s1_verdict) s1[o.s1_verdict]++;
-    byComment.set(o.comment_id, o.s1_verdict);
-  }
-
-  const labels = await db
-    .selectFrom('labels')
-    .innerJoin('comments', 'comments.id', 'labels.comment_id')
-    .select(['labels.comment_id', 'labels.source', 'labels.verdict'])
-    .where('comments.connector_id', '=', connector.id)
-    .execute();
-  const agreement = new Map<string, { agree: number; total: number }>();
-  for (const l of labels) {
-    const entry = agreement.get(l.source) ?? { agree: 0, total: 0 };
-    entry.total++;
-    if (byComment.get(l.comment_id) === l.verdict) entry.agree++;
-    agreement.set(l.source, entry);
-  }
-
-  return {
-    connector: connectorName,
-    comments: outcomes.length,
-    s1,
-    agreement: [...agreement].map(([source, a]) => ({ source, ...a })),
-  };
-}
-
 function sha256(text: string): string {
   return createHash('sha256').update(text).digest('hex');
 }

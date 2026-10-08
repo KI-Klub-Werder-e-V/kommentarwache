@@ -17,7 +17,14 @@ export interface Stage1Context {
   policy: Policy;
   policyId: number;
   pipelineConfigId?: number | null;
+  /** queues the stage-2 job inside the same transaction as the decision */
+  enqueueStage2?: EnqueueStage2;
 }
+
+export type EnqueueStage2 = (
+  trx: Kysely<DB>,
+  job: { commentId: number; revision: number; verdict: Verdict },
+) => Promise<void>;
 
 export interface Stage1Result {
   commentId: number;
@@ -149,12 +156,20 @@ export async function runStage1(
       })
       .returning('id')
       .executeTakeFirstOrThrow();
+    const next = nextState(routing.verdict, routing.category, ctx);
     await trx
       .updateTable('comments')
-      .set(nextState(routing.verdict, routing.category, ctx.pipelineConfigId ?? null))
+      .set(next)
       .where('id', '=', comment.id)
       .where('revision', '=', comment.revision)
       .execute();
+    if (next.state === 's2_pending' && ctx.enqueueStage2) {
+      await ctx.enqueueStage2(trx, {
+        commentId: comment.id,
+        revision: comment.revision,
+        verdict: routing.verdict,
+      });
+    }
     return d;
   });
 
@@ -168,9 +183,9 @@ export async function runStage1(
   };
 }
 
-/** Until stage 2 exists (milestone 2), everything that is not ok waits in s2_pending. */
-function nextState(verdict: Verdict, category: string, pipelineConfigId: number | null) {
-  const base = { pipeline_config_id: pipelineConfigId };
+/** ok closes the comment; anything else waits for stage 2 with a deadline. */
+function nextState(verdict: Verdict, category: string, ctx: Stage1Context) {
+  const base = { pipeline_config_id: ctx.pipelineConfigId ?? null };
   if (verdict === 'ok') {
     return {
       ...base,
@@ -181,5 +196,9 @@ function nextState(verdict: Verdict, category: string, pipelineConfigId: number 
       closed_at: new Date(),
     };
   }
-  return { ...base, state: 's2_pending' as const };
+  return {
+    ...base,
+    state: 's2_pending' as const,
+    state_deadline_at: new Date(Date.now() + ctx.policy.stage2.deadlineSeconds * 1000),
+  };
 }
