@@ -86,3 +86,8 @@ analytics are simple queries on it. See `packages/server/migrations/`.
   automatic ones, and queues the rest for a human (proposed, unsupported, failed).
   Undo for hide and ban; deletes a human overturns are marked. A Sources page and
   `kw source modes` set the modes. The `fake` connector is an in-memory platform.
+- Milestone 5: connectors. Credentials encrypted at rest (`KW_SECRET_KEY`), a poll task
+  every two minutes that ingests new comments and queues stage 1, and connectors for the
+  generic site (signed action callbacks), YouTube (`commentThreads` and
+  `setModerationStatus`), Facebook Pages and Instagram (Graph API v26.0). `kw source-add`,
+  `kw source-test`, `kw source-poll`. See `docs/connectors.md`.

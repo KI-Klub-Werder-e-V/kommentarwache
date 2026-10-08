@@ -9,6 +9,7 @@ import { PolicySchema, type Battery, type Policy } from '@kommentarwache/contrac
 import { applyLadder } from '../actions/engine.js';
 import type { ConnectorRegistry } from '../connectors/connector.js';
 import { defaultConnectorRegistry } from '../connectors/registry.js';
+import { secretKeyFromEnv } from '../connectors/secrets.js';
 import { makeEnqueueStage2 } from '../pipeline/queue.js';
 import type { AfterDecision, EnqueueStage2 } from '../pipeline/stage1.js';
 import { OllamaJudgeProvider, type JudgeProvider } from './llmjudge.js';
@@ -27,6 +28,8 @@ export interface ProviderEnv {
   layaApiKey?: string | undefined;
   ollamaUrl?: string | undefined;
   ollamaModel?: string | undefined;
+  /** decoded KW_SECRET_KEY, when set */
+  secretKey?: Buffer | undefined;
 }
 
 export const OLLAMA_DEFAULT_URL = 'http://localhost:11434';
@@ -38,6 +41,7 @@ export function envFromProcess(): ProviderEnv {
     layaApiKey: process.env['LAYA_API_KEY'],
     ollamaUrl: process.env['OLLAMA_URL'],
     ollamaModel: process.env['OLLAMA_MODEL'],
+    secretKey: process.env['KW_SECRET_KEY'] ? secretKeyFromEnv() : undefined,
   };
 }
 
@@ -191,6 +195,7 @@ export interface ActivePipeline {
   judge?: JudgeProvider;
   enqueueStage2: EnqueueStage2;
   connectors: ConnectorRegistry;
+  secretKey?: Buffer | undefined;
   afterDecision: AfterDecision;
 }
 
@@ -257,8 +262,9 @@ export async function loadActivePipeline(
     ...(judgeRow ? { judge: buildJudge(judgeRow, env) } : {}),
     enqueueStage2: makeEnqueueStage2(),
     connectors,
+    secretKey: env.secretKey,
     afterDecision: async (t) => {
-      await applyLadder(db, { connectors }, policy.data, t);
+      await applyLadder(db, { connectors, secretKey: env.secretKey }, policy.data, t);
     },
   };
 }

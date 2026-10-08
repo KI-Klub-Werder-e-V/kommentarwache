@@ -20,10 +20,17 @@ import {
   type ConnectorActionMode,
   type DB,
 } from '../db/types.js';
+import { decryptSecrets } from '../connectors/secrets.js';
 import { ladder, type LadderAction, type LadderInput } from './ladder.js';
 
 export interface EngineDeps {
   connectors: ConnectorRegistry;
+  /** KW_SECRET_KEY; without it, connectors that need credentials cannot be built */
+  secretKey?: Buffer | undefined;
+}
+
+function secretsFor(deps: EngineDeps, blob: Buffer | null): Record<string, unknown> {
+  return deps.secretKey ? decryptSecrets(blob, deps.secretKey) : {};
 }
 
 export interface Trigger {
@@ -73,6 +80,7 @@ export async function applyLadder(
       'connectors.kind',
       'connectors.name as connector_name',
       'connectors.config',
+      'connectors.secrets_enc',
       'connectors.enabled',
       'connectors.breaker_open_at',
     ])
@@ -119,6 +127,7 @@ export async function applyLadder(
     kind: comment.kind,
     name: comment.connector_name,
     config: comment.config,
+    secrets: secretsFor(deps, comment.secrets_enc),
   });
   const modes = await db
     .selectFrom('connector_action_modes')
@@ -259,6 +268,7 @@ export async function executeAction(
       'connectors.kind',
       'connectors.name',
       'connectors.config',
+      'connectors.secrets_enc',
     ])
     .where('actions.id', '=', actionId)
     .executeTakeFirstOrThrow();
@@ -268,6 +278,7 @@ export async function executeAction(
     kind: a.kind,
     name: a.name,
     config: a.config,
+    secrets: secretsFor(deps, a.secrets_enc),
   });
   const op = connector?.[a.action_type as keyof Connector] as Connector['hide'] | undefined;
   const target: ActionTarget = {

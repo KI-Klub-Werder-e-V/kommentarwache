@@ -134,7 +134,7 @@ export function dashboardRoutes(db: Kysely<DB>, pipeline: () => Promise<ActivePi
         actorId: c.get('moderator').id,
         via: 'dashboard',
       },
-      { connectors: p.connectors, policy: p.policy },
+      { connectors: p.connectors, secretKey: p.secretKey, policy: p.policy },
     );
     const next = String(form['next'] ?? '');
     return c.redirect(/^\d+$/.test(next) ? `${BASE}/comments/${next}` : `${BASE}/`);
@@ -147,7 +147,7 @@ export function dashboardRoutes(db: Kysely<DB>, pipeline: () => Promise<ActivePi
     const form = await c.req.parseBody();
     const op = String(form['op'] ?? '');
     const p = await pipeline();
-    const engine = { connectors: p.connectors };
+    const engine = { connectors: p.connectors, secretKey: p.secretKey };
     const actorId = c.get('moderator').id;
     if (op === 'hide' || op === 'delete' || op === 'ban') {
       await manualAction(db, engine, { commentId: id, type: op, actorId, via: 'dashboard' });

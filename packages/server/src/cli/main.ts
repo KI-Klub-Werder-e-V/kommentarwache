@@ -15,6 +15,10 @@ import { parseArgs } from 'node:util';
 import { createApiToken } from '../api/auth.js';
 import { verifyAudit } from '../audit.js';
 import { listSourcesWithModes, setConnectorModes } from '../connectors/modes.js';
+import { pollConnector } from '../connectors/poll.js';
+import { CONNECTOR_KINDS, defaultConnectorRegistry } from '../connectors/registry.js';
+import { decryptSecrets, encryptSecrets, secretKeyFromEnv } from '../connectors/secrets.js';
+import { appendAudit } from '../audit.js';
 import { SYSTEM_ACTOR_ID, type ConnectorActionMode } from '../db/types.js';
 import { createModerator } from '../auth/moderators.js';
 import { loadDotenv, requireEnv } from '../config.js';
@@ -296,6 +300,90 @@ async function main(argv: string[]): Promise<number> {
         console.log(`modes set for ${values.source}`);
         return 0;
       }
+      case 'source-add': {
+        const { values } = parseArgs({
+          args: rest,
+          options: {
+            kind: { type: 'string' },
+            name: { type: 'string' },
+            config: { type: 'string', default: '{}' },
+            secrets: { type: 'string', default: '{}' },
+          },
+        });
+        if (!values.kind || !values.name)
+          throw new Error(
+            'usage: kw source-add --kind <kind> --name <name> [--config json] [--secrets json]',
+          );
+        if (!(CONNECTOR_KINDS as readonly string[]).includes(values.kind))
+          throw new Error(`kind must be one of ${CONNECTOR_KINDS.join(', ')}`);
+        const secrets = JSON.parse(values.secrets) as Record<string, unknown>;
+        const secretsEnc = Object.keys(secrets).length
+          ? encryptSecrets(secrets, secretKeyFromEnv())
+          : null;
+        const row = await handle.db
+          .insertInto('connectors')
+          .values({
+            kind: values.kind,
+            name: values.name,
+            config: values.config,
+            secrets_enc: secretsEnc,
+          })
+          .onConflict((oc) =>
+            oc
+              .column('name')
+              .doUpdateSet({ kind: values.kind, config: values.config, secrets_enc: secretsEnc }),
+          )
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        await appendAudit(handle.db, {
+          actorId: SYSTEM_ACTOR_ID,
+          via: 'cli',
+          event: 'connector.saved',
+          subjectType: 'connector',
+          subjectId: row.id,
+          payload: { kind: values.kind, name: values.name },
+        });
+        console.log(
+          `source ${row.id} (${values.kind}) saved as ${values.name}; set its modes with kw source modes`,
+        );
+        return 0;
+      }
+      case 'source-test':
+      case 'source-poll': {
+        const { values } = parseArgs({ args: rest, options: { source: { type: 'string' } } });
+        if (!values.source) throw new Error(`usage: kw ${command} --source <name>`);
+        const row = await handle.db
+          .selectFrom('connectors')
+          .selectAll()
+          .where('name', '=', values.source)
+          .executeTakeFirstOrThrow(() => new Error(`no source named ${values.source}`));
+        const env = envFromProcess();
+        const registry = defaultConnectorRegistry();
+        if (command === 'source-test') {
+          const connector = registry.get({
+            id: row.id,
+            kind: row.kind,
+            name: row.name,
+            config: row.config,
+            secrets: env.secretKey ? decryptSecrets(row.secrets_enc, env.secretKey) : {},
+          });
+          if (!connector) throw new Error(`no connector for kind ${row.kind}`);
+          const result = connector.check
+            ? await connector.check()
+            : { ok: true, detail: `${row.kind} has no credential check` };
+          console.log(
+            `${result.ok ? 'ok' : 'FAILED'}: ${result.detail}; capabilities: ${[...connector.capabilities].join(', ')}`,
+          );
+          return result.ok ? 0 : 1;
+        }
+        const summary = await pollConnector(
+          handle.db,
+          { connectors: registry, secretKey: env.secretKey },
+          row.id,
+        );
+        console.log(JSON.stringify(summary, null, 2));
+        return summary.error ? 1 : 0;
+      }
       case 'token': {
         const { values, positionals } = parseArgs({
           args: rest,
@@ -349,6 +437,10 @@ function usage(): string {
       [--limit <n>]
   labels import                 attach labels (JSON array or JSONL of {id, verdict}) to a connector
       --connector <name> --file <path> --source <name>
+  source-add                    add or update a platform source (needs KW_SECRET_KEY for secrets)
+      --kind <api|youtube|facebook|instagram|fake> --name <n> [--config json] [--secrets json]
+  source-test --source <name>   check the credentials and list capabilities
+  source-poll --source <name>   poll once now (the worker polls every 2 minutes)
   source list                   sources with their action modes
   source modes                  set how far a source may act: off | dry_run | propose | auto
       --source <name> --hide <mode> --delete <mode> --ban <mode> [--max-per-hour <n>]

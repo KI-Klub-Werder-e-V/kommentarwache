@@ -4,6 +4,8 @@
  * queue when a wanted action does not exist on a platform.
  */
 
+import type { CommentContext } from '@kommentarwache/contract';
+
 export type Capability =
   'poll' | 'webhook' | 'hide' | 'unhide' | 'delete' | 'ban' | 'unban' | 'hold' | 'approve';
 
@@ -23,11 +25,35 @@ export interface ActionResult {
   error?: string;
 }
 
+/** A comment as a connector hands it to the pipeline. Author fields are stored, never sent to a model. */
+export interface NormalizedComment {
+  platformCommentId: string;
+  text: string;
+  authorRef?: string | undefined;
+  authorName?: string | undefined;
+  permalink?: string | undefined;
+  parentPlatformId?: string | undefined;
+  /** the post, video or thread the comment belongs to */
+  threadRef?: string | undefined;
+  platformCreatedAt?: Date | undefined;
+  context?: CommentContext | undefined;
+}
+
+export interface PollResult {
+  comments: NormalizedComment[];
+  /** opaque state for the next poll, stored on the connector row */
+  cursor: Record<string, unknown>;
+}
+
 export interface Connector {
   readonly kind: string;
   readonly capabilities: ReadonlySet<Capability>;
   /** seconds after posting during which deletion is still possible; undefined means always */
   readonly actionWindowSeconds?: number;
+  /** fetch comments newer than the cursor; the pipeline deduplicates */
+  poll?(cursor: Record<string, unknown>): Promise<PollResult>;
+  /** a cheap call that proves the credentials work, for `kw source test` */
+  check?(): Promise<{ ok: boolean; detail: string }>;
   hide?(target: ActionTarget): Promise<ActionResult>;
   unhide?(target: ActionTarget): Promise<ActionResult>;
   delete?(target: ActionTarget): Promise<ActionResult>;
@@ -36,12 +62,16 @@ export interface Connector {
 }
 
 /** Builds a connector instance for a connectors row, from its kind and decrypted config. */
-export type ConnectorFactory = (row: {
+export interface ConnectorRow {
   id: number;
   kind: string;
   name: string;
   config: Record<string, unknown>;
-}) => Connector | undefined;
+  /** decrypted credentials; empty when none are stored */
+  secrets: Record<string, unknown>;
+}
+
+export type ConnectorFactory = (row: ConnectorRow) => Connector | undefined;
 
 /**
  * An in-memory platform for tests and dry runs: remembers every call, can be told to
@@ -104,16 +134,18 @@ export class ConnectorRegistry {
     return this;
   }
 
-  get(row: {
-    id: number;
-    kind: string;
-    name: string;
-    config: Record<string, unknown>;
-  }): Connector | undefined {
+  get(
+    row: Omit<ConnectorRow, 'secrets'> & { secrets?: Record<string, unknown> },
+  ): Connector | undefined {
     const known = this.instances.get(row.id);
     if (known) return known;
-    const built = this.factories.get(row.kind)?.(row);
+    const built = this.factories.get(row.kind)?.({ ...row, secrets: row.secrets ?? {} });
     if (built) this.instances.set(row.id, built);
     return built;
+  }
+
+  /** forget a built instance, e.g. after its credentials changed */
+  invalidate(connectorId: number): void {
+    this.instances.delete(connectorId);
   }
 }

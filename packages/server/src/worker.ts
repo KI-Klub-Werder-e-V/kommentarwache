@@ -7,6 +7,7 @@
 
 import { run, runMigrations, type Runner, type TaskList } from 'graphile-worker';
 import type { Logger } from 'pino';
+import { pollAll } from './connectors/poll.js';
 import type { DbHandle } from './db/client.js';
 import { WORKER_SCHEMA } from './pipeline/queue.js';
 import { reconcileDeadlines } from './pipeline/reconcile.js';
@@ -21,6 +22,8 @@ export interface WorkerDeps {
   schema?: string;
   /** how many stage-1 jobs may run at once; stage 2 is always serial */
   concurrency?: number;
+  /** how often sources are polled */
+  pollMinutes?: number;
 }
 
 export function buildTasks(deps: WorkerDeps): TaskList {
@@ -77,6 +80,16 @@ export function buildTasks(deps: WorkerDeps): TaskList {
         throw err;
       }
     },
+    poll: async () => {
+      const pipeline = await deps.pipeline();
+      const results = await pollAll(deps.handle.db, {
+        connectors: pipeline.connectors,
+        secretKey: pipeline.secretKey,
+        log: deps.log,
+      });
+      const fetched = results.reduce((n, r) => n + r.fetched, 0);
+      if (fetched || results.some((r) => r.error)) deps.log.info({ results }, 'poll round');
+    },
     reconcile: async () => {
       const r = await reconcileDeadlines(deps.handle.db);
       if (r.timedOut) deps.log.info(r, 'stage-2 deadlines passed; sent to humans');
@@ -91,7 +104,9 @@ export async function startWorker(deps: WorkerDeps): Promise<Runner> {
     pgPool: deps.handle.pool,
     schema,
     taskList: buildTasks(deps),
-    crontab: '* * * * * reconcile ?max=1',
+    crontab: ['* * * * * reconcile ?max=1', `*/${deps.pollMinutes ?? 2} * * * * poll ?max=1`].join(
+      '\n',
+    ),
     concurrency: deps.concurrency ?? 2,
     noHandleSignals: true,
     pollInterval: 2000,
