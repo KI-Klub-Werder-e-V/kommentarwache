@@ -15,9 +15,9 @@ import {
   type Verdict,
 } from '@kommentarwache/contract';
 import { z } from 'zod';
-import { BATTERY_V1 } from '../batteries/v1.js';
 import { SYSTEM_ACTOR_ID, type DB } from '../db/types.js';
 import { POLICIES, routeV1, toV1Answers } from '../policy/policy.js';
+import { ensureBattery, ensurePolicy } from '../providers/registry.js';
 
 const FlatAssessment = z.object({
   sentiment: z.string(),
@@ -128,10 +128,9 @@ export async function importPrototype(db: Kysely<DB>, opts: ImportOptions): Prom
 
   return db.transaction().execute(async (trx) => {
     const connectorId = await ensureConnector(trx, opts.connectorName);
-    const batteryId = await ensureBattery(trx);
+    const batteryId = (await ensureBattery(trx, 'v1')).id;
     const policyId = await ensurePolicy(trx, policy);
     const providerId = await ensureProvider(trx, batteryId);
-    const pipelineId = await ensurePipeline(trx, providerId, policyId);
 
     const summary: ImportSummary = {
       connectorId,
@@ -171,7 +170,6 @@ export async function importPrototype(db: Kysely<DB>, opts: ImportOptions): Prom
           context: JSON.stringify(meta?.context ?? {}),
           is_backfill: true,
           state: 'closed',
-          pipeline_config_id: pipelineId,
           final_verdict: routing.verdict,
           final_category: routing.category,
           final_stage: 's1',
@@ -339,48 +337,6 @@ async function ensureAuthor(
   return row.id;
 }
 
-async function ensureBattery(db: Kysely<DB>): Promise<number> {
-  const found = await db
-    .selectFrom('batteries')
-    .select('id')
-    .where('name', '=', BATTERY_V1.name)
-    .where('version', '=', BATTERY_V1.version)
-    .executeTakeFirst();
-  if (found) return found.id;
-  const row = await db
-    .insertInto('batteries')
-    .values({
-      name: BATTERY_V1.name,
-      version: BATTERY_V1.version,
-      questions: JSON.stringify(BATTERY_V1.questions),
-      mapper: 'v1',
-    })
-    .returning('id')
-    .executeTakeFirstOrThrow();
-  return row.id;
-}
-
-async function ensurePolicy(db: Kysely<DB>, policy: Policy): Promise<number> {
-  const found = await db
-    .selectFrom('policies')
-    .select('id')
-    .where('name', '=', policy.name)
-    .where('version', '=', 1)
-    .executeTakeFirst();
-  if (found) return found.id;
-  const row = await db
-    .insertInto('policies')
-    .values({
-      name: policy.name,
-      version: 1,
-      spec: JSON.stringify(policy),
-      created_by: SYSTEM_ACTOR_ID,
-    })
-    .returning('id')
-    .executeTakeFirstOrThrow();
-  return row.id;
-}
-
 async function ensureProvider(db: Kysely<DB>, batteryId: number): Promise<number> {
   const name = 'jev-prototype-import';
   const found = await db
@@ -392,31 +348,6 @@ async function ensureProvider(db: Kysely<DB>, batteryId: number): Promise<number
   const row = await db
     .insertInto('provider_configs')
     .values({ name, kind: 'import', model: 'jev-1.13.0', battery_id: batteryId })
-    .returning('id')
-    .executeTakeFirstOrThrow();
-  return row.id;
-}
-
-async function ensurePipeline(
-  db: Kysely<DB>,
-  providerId: number,
-  policyId: number,
-): Promise<number> {
-  const found = await db
-    .selectFrom('pipeline_configs')
-    .select('id')
-    .where('version', '=', 1)
-    .executeTakeFirst();
-  if (found) return found.id;
-  const row = await db
-    .insertInto('pipeline_configs')
-    .values({
-      version: 1,
-      s1_primary: providerId,
-      policy_id: policyId,
-      activated_at: new Date(),
-      activated_by: SYSTEM_ACTOR_ID,
-    })
     .returning('id')
     .executeTakeFirstOrThrow();
   return row.id;

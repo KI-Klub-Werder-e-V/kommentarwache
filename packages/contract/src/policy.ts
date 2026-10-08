@@ -21,8 +21,35 @@ export const V1ThresholdsSchema = z.object({
 });
 export type V1Thresholds = z.infer<typeof V1ThresholdsSchema>;
 
+/**
+ * Thresholds for battery v2, the choice-only battery (sentiment, attack, target,
+ * severity, spam). Severity is the expected level over the four severity options,
+ * so the numbers are comparable with v1.
+ */
+export const V2ThresholdsSchema = z.object({
+  /** P(attacks a person or group) at or above this is a violation; null disables */
+  attackViolation: z.number().min(0).max(1).nullable(),
+  /** P(attacks a person or group) at or above this is unsure */
+  attackUnsure: z.number().min(0).max(1),
+  severityViolation: z.number().min(0).max(3),
+  severityUnsure: z.number().min(0).max(3),
+  /** P(spam or scam) at or above this is a violation */
+  spamViolation: z.number().min(0).max(1),
+  /** P(spam or scam) at or above this is unsure */
+  spamUnsure: z.number().min(0).max(1),
+  /**
+   * Rude-level negativity aimed at a public figure who is the subject of the post is
+   * ordinary political or product comment, not a violation. Harassment and threats
+   * are judged the same whoever the target is.
+   */
+  tolerateRudeTowardPublicFigure: z.boolean(),
+  minConfidence: z.number().min(0).max(1),
+});
+export type V2Thresholds = z.infer<typeof V2ThresholdsSchema>;
+
 export const PolicySchema = z.object({
   name: z.string().min(1),
   v1: V1ThresholdsSchema,
+  v2: V2ThresholdsSchema,
 });
 export type Policy = z.infer<typeof PolicySchema>;

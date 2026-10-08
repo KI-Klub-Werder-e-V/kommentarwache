@@ -10,7 +10,7 @@
 {"id": "neg_self_deprecating", "text": "I'm such an idiot, I spent two hours debugging before realizing I never saved the file.", "expected": "approve"}
 {"id": "mixed", "text": "Great video quality but the audio is terrible and honestly the host talks way too much.", "expected": "approve"}
 {"id": "quote_hostile", "text": "He literally said \"you people are animals\" in the meeting and nobody pushed back. Unacceptable.", "expected": "approve"}
-{"id": "spam_positive", "text": "Amazing!! Check out my channel for more like this 👉 bit.ly/xyz", "expected": "approve"}
+{"id": "spam_positive", "text": "Amazing!! Check out my channel for more like this 👉 bit.ly/xyz", "expected": "flag"}
 {"id": "rude_mild", "text": "Did you even read the article before commenting? Come on.", "expected": "review"}
 {"id": "passive_aggressive", "text": "Interesting that you'd post this when you clearly haven't done the reading, but okay.", "expected": "review"}
 {"id": "sarcastic_positive", "text": "Oh wow, what a genius take. Truly the smartest thing anyone has ever posted here. 🙄", "expected": "review"}

@@ -4,7 +4,14 @@
  */
 
 import type { ColumnType, Generated, JSONColumnType } from 'kysely';
-import type { Answers, Category, Policy, Questions, Verdict } from '@kommentarwache/contract';
+import type {
+  Answers,
+  Category,
+  CommentContext,
+  Policy,
+  Questions,
+  Verdict,
+} from '@kommentarwache/contract';
 
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
 type Json<T extends object | null> = JSONColumnType<T>;
@@ -142,12 +149,7 @@ export interface IngestEventsTable {
   processed_at: Timestamp | null;
 }
 
-export interface CommentContext {
-  platform?: string;
-  post?: string;
-  parent_comment?: string;
-  comment_kind?: string;
-}
+export type { CommentContext };
 
 export interface CommentsTable {
   id: Generated<number>;

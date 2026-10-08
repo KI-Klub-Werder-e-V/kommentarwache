@@ -13,10 +13,28 @@ import {
   type Policy,
   type Routing,
   type V1Thresholds,
+  type V2Thresholds,
   type Verdict,
 } from '@kommentarwache/contract';
+import { routeV2, toV2Answers } from './v2.js';
 
-/** The prototype's four named policies, in the new vocabulary. */
+export { expectedSeverity, routeV2, toV2Answers } from './v2.js';
+
+/** The v2 thresholds every named policy shares unless it says otherwise. */
+const V2_DEFAULT: V2Thresholds = {
+  attackViolation: null,
+  // The prototype's 0.35 sent a third of a political thread to review; 0.60 was the
+  // suggested correction from that test.
+  attackUnsure: 0.6,
+  severityViolation: 1.5,
+  severityUnsure: 1.0,
+  spamViolation: 0.8,
+  spamUnsure: 0.5,
+  tolerateRudeTowardPublicFigure: true,
+  minConfidence: 0.6,
+};
+
+/** The prototype's four named policies, in the new vocabulary, plus v2 thresholds. */
 export const POLICIES: Record<string, Policy> = {
   // Default. Hostility alone only earns a second look; the graded severity scale decides
   // what is a violation. Mild rudeness is unsure, harassment and threats are violations.
@@ -30,6 +48,7 @@ export const POLICIES: Record<string, Policy> = {
       minConfidence: 0.6,
       flagNegativeSentiment: false,
     },
+    v2: V2_DEFAULT,
   },
   strict: {
     name: 'strict',
@@ -40,6 +59,12 @@ export const POLICIES: Record<string, Policy> = {
       severityUnsure: 1.0,
       minConfidence: 0.6,
       flagNegativeSentiment: false,
+    },
+    v2: {
+      ...V2_DEFAULT,
+      attackViolation: 0.9,
+      attackUnsure: 0.35,
+      tolerateRudeTowardPublicFigure: false,
     },
   },
   permissive: {
@@ -52,6 +77,7 @@ export const POLICIES: Record<string, Policy> = {
       minConfidence: 0.6,
       flagNegativeSentiment: false,
     },
+    v2: { ...V2_DEFAULT, attackUnsure: 0.8, severityViolation: 2.0, severityUnsure: 1.5 },
   },
   // What "flag negative comments" literally means. Kept to show what it gets wrong.
   naive: {
@@ -64,9 +90,17 @@ export const POLICIES: Record<string, Policy> = {
       minConfidence: 0.6,
       flagNegativeSentiment: true,
     },
+    v2: V2_DEFAULT,
   },
 };
 export const DEFAULT_POLICY = 'severity_led';
+
+/** Route answers with the mapper that belongs to the battery they came from. */
+export function route(mapper: 'v1' | 'v2', answers: Answers, policy: Policy): Routing {
+  return mapper === 'v1'
+    ? routeV1(toV1Answers(answers), policy)
+    : routeV2(toV2Answers(answers), policy);
+}
 
 /** The answers battery v1 produces. Question ids match the prototype's questions.py. */
 export interface V1Answers {

@@ -6,8 +6,10 @@ LLM, acts on obvious violations itself, and sends only ambiguous comments to a l
 review dashboard. Every model decision is logged, and the same API is available to
 coding agents through MCP.
 
-Status: milestone 0 of 8. Not yet usable. See the plan in the pull-request history and
-`docs/` as they land.
+Status: milestone 1 of 8. Stage 1 works end to end against Jev: `POST /v1/moderate`
+returns a verdict, everything is stored and replayable, and the eval harness reports
+agreement with labelled sets (see `eval/README.md`). No stage 2, dashboard, actions or
+platform connectors yet. The plan is in `docs/plan.md`.
 
 ## Design in one paragraph
 
@@ -23,12 +25,32 @@ can be replayed over history without calling a model again.
 - One Linux server with 16 GB RAM and no GPU is enough, with Docker.
 - Node 24 and pnpm for development.
 
+## Try it
+
+```bash
+cp .env.example .env            # set DATABASE_URL and TYPESAFE_API_KEY
+pnpm install && pnpm build
+KW="node packages/server/dist/cli/main.js"
+$KW migrate
+$KW setup                        # activates Jev with battery v2 and the severity_led policy
+$KW token create --name demo     # prints an API token once
+pnpm --filter @kommentarwache/server dev
+
+curl -s localhost:8080/v1/moderate \
+  -H "Authorization: Bearer kw_..." -H "Content-Type: application/json" \
+  -d '{"source":"demo","id":"c1","text":"Did you even read the article? Come on."}'
+```
+
+The answer carries the verdict (`ok`, `unsure` or `violation`), the category, the reasons
+with their thresholds, and the state: `closed`, or `s2_pending` for anything that needs a
+second look. The OpenAPI document is at `/openapi.json`.
+
 ## Development
 
 ```bash
 pnpm install
-pnpm build
-pnpm test
+pnpm build                       # also the typecheck
+TEST_DATABASE_URL=postgres://... pnpm test   # or leave it unset to use a Docker container
 ```
 
 ## Licence

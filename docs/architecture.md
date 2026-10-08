@@ -65,6 +65,10 @@ analytics are simple queries on it. See `packages/server/migrations/`.
 
 ## What exists today
 
-Milestone 0: schema, the policy router ported from the prototype with its tests, and
-`kw import-prototype`, which loads the prototype's stored results and reproduces its
-verdict counts.
+- Milestone 0: schema, the policy router ported from the prototype with its tests, and
+  `kw import-prototype`, which loads the prototype's stored results and reproduces its
+  verdict counts.
+- Milestone 1: the System One client and provider (Jev and Laya share it), battery v2
+  (choice-only: sentiment, attack, target, severity, spam) with its router, idempotent
+  ingest and stage 1, `POST /v1/moderate` with API tokens and an OpenAPI document, and the
+  eval harness (`kw eval`, `kw replay`, `kw labels import`). Results in `eval/README.md`.
