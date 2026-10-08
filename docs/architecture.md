@@ -76,3 +76,7 @@ analytics are simple queries on it. See `packages/server/migrations/`.
   the combination table above as code, jobs on graphile-worker enqueued in the same
   transaction as the decision (stage 2 serial, most harmful first), deadlines with a
   reconciler every minute, and `kw stage2-run` for evaluation.
+- Milestone 3: the dashboard under `/app` (queue, comment timeline with one-click
+  decision, decision log, analytics), moderator accounts with scrypt passwords and
+  server-side sessions, `decideComment` as the one path for human decisions, and the
+  hash-chained audit log (`kw audit verify`).

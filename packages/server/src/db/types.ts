@@ -14,6 +14,8 @@ import type {
 } from '@kommentarwache/contract';
 
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
+/** a timestamp with a database default: optional on insert, a Date when read */
+type TimestampWithDefault = ColumnType<Date, Date | string | undefined, Date | string>;
 type Json<T extends object | null> = JSONColumnType<T>;
 type JsonObject = Record<string, unknown>;
 /** a JSON column with a database default: optional on insert, still a string */
@@ -52,14 +54,14 @@ export interface ActorsTable {
   token_hash: string | null;
   scopes: Generated<string[]>;
   owner_actor_id: number | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
   disabled_at: Timestamp | null;
 }
 
 export interface SessionsTable {
   id_hash: string;
   actor_id: number;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
   expires_at: Timestamp;
 }
 
@@ -69,7 +71,7 @@ export interface BatteriesTable {
   version: number;
   questions: Json<Questions>;
   mapper: string;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface PoliciesTable {
@@ -78,7 +80,7 @@ export interface PoliciesTable {
   version: number;
   spec: Json<Policy>;
   created_by: number | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface ProviderConfigsTable {
@@ -91,7 +93,7 @@ export interface ProviderConfigsTable {
   params: JsonWithDefault<Record<string, unknown>>;
   calibration: JsonWithDefault<Record<string, unknown>>;
   is_local: Generated<boolean>;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface PipelineConfigsTable {
@@ -106,7 +108,7 @@ export interface PipelineConfigsTable {
   activated_at: Timestamp | null;
   activated_by: number | null;
   deactivated_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface ConnectorsTable {
@@ -120,7 +122,7 @@ export interface ConnectorsTable {
   cursor: JsonWithDefault<Record<string, unknown>>;
   enabled: Generated<boolean>;
   breaker_open_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface ConnectorActionModesTable {
@@ -137,7 +139,7 @@ export interface AuthorsTable {
   display_name: string | null;
   allowlisted: Generated<boolean>;
   banned_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface IngestEventsTable {
@@ -145,7 +147,7 @@ export interface IngestEventsTable {
   connector_id: number;
   dedupe_key: string;
   payload: Json<JsonObject>;
-  received_at: Generated<Timestamp>;
+  received_at: TimestampWithDefault;
   processed_at: Timestamp | null;
 }
 
@@ -165,7 +167,7 @@ export interface CommentsTable {
   lang: string | null;
   context: JsonWithDefault<CommentContext>;
   platform_created_at: Timestamp | null;
-  ingested_at: Generated<Timestamp>;
+  ingested_at: TimestampWithDefault;
   is_backfill: Generated<boolean>;
   state: CommentState;
   state_deadline_at: Timestamp | null;
@@ -185,7 +187,7 @@ export interface LabelsTable {
   category: string | null;
   sentiment: string | null;
   note: string | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface AssessmentsTable {
@@ -205,7 +207,7 @@ export interface AssessmentsTable {
   output_tokens: number | null;
   cost_usd: number | null;
   error: string | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface DecisionsTable {
@@ -225,7 +227,7 @@ export interface DecisionsTable {
   overrides_decision_id: number | null;
   replay_run_id: number | null;
   note: string | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface ReviewItemsTable {
@@ -233,7 +235,7 @@ export interface ReviewItemsTable {
   comment_id: number;
   reason: ReviewReason;
   priority: Generated<number>;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
   claimed_by: number | null;
   claimed_at: Timestamp | null;
   first_viewed_at: Timestamp | null;
@@ -263,13 +265,13 @@ export interface ActionsTable {
   undone_at: Timestamp | null;
   overturned_at: Timestamp | null;
   overturned_by_decision_id: number | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
   executed_at: Timestamp | null;
 }
 
 export interface AuditLogTable {
   id: Generated<number>;
-  at: Generated<Timestamp>;
+  at: TimestampWithDefault;
   actor_id: number | null;
   via: string | null;
   event: string;
@@ -287,7 +289,7 @@ export interface DatasetExportsTable {
   sha256: string | null;
   counts: JsonWithDefault<Record<string, number>>;
   created_by: number | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface DatasetItemsTable {
@@ -304,7 +306,7 @@ export interface EvaluationsTable {
   metrics: JsonWithDefault<Record<string, unknown>>;
   gate_passed: boolean | null;
   decided_by: number | null;
-  created_at: Generated<Timestamp>;
+  created_at: TimestampWithDefault;
 }
 
 export interface CommentOutcomesView {

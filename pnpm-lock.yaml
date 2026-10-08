@@ -48,6 +48,9 @@ importers:
       hono:
         specifier: ^4.13.13
         version: 4.13.13
+      htmx.org:
+        specifier: ^2.0.11
+        version: 2.0.11
       kysely:
         specifier: ^0.29.6
         version: 0.29.6
@@ -942,6 +945,9 @@ packages:
   hono@4.13.13:
     resolution: {integrity: sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA==}
     engines: {node: '>=16.9.0'}
+
+  htmx.org@2.0.11:
+    resolution: {integrity: sha512-Thx/WtpeOQqSrqBCw/A1cwGJGg4UrVa3+sW0GmrM3p4gJgO89ecH4qtbnyzDDWFvBTqjnIMCgELTNt636dtamA==}
 
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
@@ -2306,6 +2312,8 @@ snapshots:
   has-flag@4.0.0: {}
 
   hono@4.13.13: {}
+
+  htmx.org@2.0.11: {}
 
   ieee754@1.2.1: {}
 

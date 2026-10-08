@@ -13,6 +13,8 @@
 
 import { parseArgs } from 'node:util';
 import { createApiToken } from '../api/auth.js';
+import { verifyAudit } from '../audit.js';
+import { createModerator } from '../auth/moderators.js';
 import { loadDotenv, requireEnv } from '../config.js';
 import { createDb } from '../db/client.js';
 import { migrate } from '../db/migrate.js';
@@ -207,6 +209,42 @@ async function main(argv: string[]): Promise<number> {
         console.log(JSON.stringify(result, null, 2));
         return 0;
       }
+      case 'moderator': {
+        const { values, positionals } = parseArgs({
+          args: rest,
+          allowPositionals: true,
+          options: {
+            email: { type: 'string' },
+            name: { type: 'string' },
+            password: { type: 'string' },
+          },
+        });
+        if (positionals[0] !== 'create' || !values.email || !values.name) {
+          throw new Error(
+            'usage: kw moderator create --email <email> --name <name> [--password <pw>]',
+          );
+        }
+        const password = values.password ?? process.env['KW_MODERATOR_PASSWORD'];
+        if (!password) throw new Error('pass --password or set KW_MODERATOR_PASSWORD');
+        const id = await createModerator(handle.db, {
+          email: values.email,
+          name: values.name,
+          password,
+        });
+        console.log(`moderator ${id} created: ${values.email}`);
+        return 0;
+      }
+      case 'audit': {
+        const { positionals } = parseArgs({ args: rest, allowPositionals: true });
+        if (positionals[0] !== 'verify') throw new Error('usage: kw audit verify');
+        const result = await verifyAudit(handle.db);
+        console.log(
+          result.brokenAt === null
+            ? `audit log intact (${result.rows} rows)`
+            : `audit log BROKEN at row ${result.brokenAt}`,
+        );
+        return result.brokenAt === null ? 0 : 1;
+      }
       case 'token': {
         const { values, positionals } = parseArgs({
           args: rest,
@@ -260,6 +298,9 @@ function usage(): string {
       [--limit <n>]
   labels import                 attach labels (JSON array or JSONL of {id, verdict}) to a connector
       --connector <name> --file <path> --source <name>
+  moderator create              create a dashboard account
+      --email <e> --name <n> [--password <pw> | $KW_MODERATOR_PASSWORD]
+  audit verify                  check the audit log's hash chain
   token create --name <name>    create an API token (scopes: moderate; use * for all)
       [--scopes a,b]
 

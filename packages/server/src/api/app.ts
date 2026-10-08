@@ -10,6 +10,8 @@ import {
   ModerateRequestSchema,
   ModerateResponseSchema,
 } from '@kommentarwache/contract';
+import { BASE } from '../dashboard/layout.js';
+import { dashboardRoutes } from '../dashboard/routes.js';
 import type { DB } from '../db/types.js';
 import { contentHash, ingestComment } from '../pipeline/ingest.js';
 import { ProviderFailed, runStage1 } from '../pipeline/stage1.js';
@@ -62,7 +64,8 @@ const healthRoute = createRoute({
 });
 
 export function createApp(deps: AppDeps) {
-  const app = new OpenAPIHono<AuthEnv>();
+  // strict: false so /app and /app/ are the same page
+  const app = new OpenAPIHono<AuthEnv>({ strict: false });
 
   app.onError((err, c) => {
     deps.log?.error({ err, path: c.req.path }, 'unhandled error');
@@ -130,6 +133,10 @@ export function createApp(deps: AppDeps) {
     openapi: '3.1.0',
     info: { title: 'kommentarwache', version: '0.1.0' },
   });
+
+  // The moderator dashboard, under its own prefix so pages and API never share a path.
+  app.route(BASE, dashboardRoutes(deps.db));
+  app.get('/', (c) => c.redirect(`${BASE}/`));
 
   return app;
 }
