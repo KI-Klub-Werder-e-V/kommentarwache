@@ -1,0 +1,22 @@
+# dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# secrets and local config
+.env
+.env.*
+!.env.example
+
+# local data that must never be published: real comments, checkpoints, exports
+eval/local/
+training/checkpoints/
+training/exports/
+data/
+
+# tooling
+.pnpm-store/
+.venv/
+__pycache__/
+.DS_Store

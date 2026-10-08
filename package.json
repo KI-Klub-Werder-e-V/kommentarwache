@@ -1,0 +1,23 @@
+{
+  "name": "kommentarwache-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-hosted, model-agnostic comment moderation with a human review queue and an agent-first API",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.1.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf packages/*/dist packages/*/*.tsbuildinfo",
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "pnpm build && pnpm format:check && pnpm test"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.9",
+    "typescript": "^7.0.2"
+  }
+}

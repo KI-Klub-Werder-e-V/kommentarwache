@@ -1,0 +1,35 @@
+{
+  "name": "@kommentarwache/server",
+  "version": "0.1.0",
+  "description": "kommentarwache service: pipeline, providers, policy, connectors, API, dashboard",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "kw": "./dist/cli/main.js"
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "kw": "tsx src/cli/main.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kommentarwache/contract": "workspace:*",
+    "kysely": "^0.29.6",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^12.2.0",
+    "@types/node": "^26.6.4",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

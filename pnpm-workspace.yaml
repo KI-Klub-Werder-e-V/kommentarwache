@@ -1,0 +1,9 @@
+packages:
+  - 'packages/*'
+# Only esbuild (used by tsx and vitest) needs its install script. The rest are optional
+# native helpers pulled in by testcontainers that work without building.
+allowBuilds:
+  esbuild: true
+  cpu-features: false
+  protobufjs: false
+  ssh2: false

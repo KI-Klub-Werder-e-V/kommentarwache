@@ -1,0 +1,61 @@
+# Minimal deployment: Postgres plus the service.
+# Optional profiles:  --profile llm   runs Ollama for the stage-2 text model
+#                     --profile laya  runs laya-serve for the local decision model
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kommentarwache
+      POSTGRES_PASSWORD: kommentarwache
+      POSTGRES_DB: kommentarwache
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U kommentarwache']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  server:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://kommentarwache:kommentarwache@db:5432/kommentarwache
+      OLLAMA_URL: http://ollama:11434
+      LAYA_URL: http://laya:8000
+    ports:
+      - '8080:8080'
+
+  ollama:
+    profiles: [llm]
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      # One model in memory at a time: the server has 16 GB for everything.
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_KEEP_ALIVE: 30m
+    volumes:
+      - ollama-data:/root/.ollama
+
+  laya:
+    profiles: [laya]
+    build: training/laya-serve
+    restart: unless-stopped
+    environment:
+      LAYA_DEVICE: cpu
+      LAYA_PRELOAD: '1'
+      LAYA_MODELS: multilingual
+      LAYA_JEV_STRICT: '1'
+    volumes:
+      - laya-cache:/root/.cache/huggingface
+      - ./training/checkpoints:/checkpoints:ro
+
+volumes:
+  db-data:
+  ollama-data:
+  laya-cache:
