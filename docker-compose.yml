@@ -9,6 +9,10 @@ services:
       POSTGRES_USER: kommentarwache
       POSTGRES_PASSWORD: kommentarwache
       POSTGRES_DB: kommentarwache
+    # reachable from the host for development (`pnpm dev`, `kw`); localhost only.
+    # Set KW_DB_PORT if 5432 is taken.
+    ports:
+      - '127.0.0.1:${KW_DB_PORT:-5432}:5432'
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:

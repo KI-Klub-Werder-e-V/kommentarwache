@@ -1,80 +1,198 @@
 # kommentarwache
 
-Self-hosted comment moderation for small organisations. It reads comments from the
-platforms you run accounts on, classifies them with a fast decision model and a text
-LLM, acts on obvious violations itself, and sends only ambiguous comments to a light
-review dashboard. Every model decision is logged, and the same API is available to
-coding agents through MCP.
+**Kommentare moderieren, ohne jeden einzeln zu lesen.**
 
-Status: milestone 7 of 8. The two-stage pipeline works end to end: `POST /v1/moderate`
-answers with Jev's verdict at once, a background worker sends unsure comments to a local
-text LLM through Ollama, and what both leave unsure lands in the review queue of the
-dashboard at `/app`, where named moderators decide with one click and every decision is
-logged in a hash-chained audit trail. The actions engine hides, deletes and bans on a
-platform according to the ladder (hide on stage 1, delete and ban only when both stages
-agree), under per-source modes (off, dry run, propose, auto) and hourly caps, with undo
-from the comment page. Connectors exist for YouTube, Facebook Pages, Instagram and any
-site through signed callbacks (`docs/connectors.md`); they are tested against recorded
-API responses and still need their first run on real accounts. Coding agents get the
-same commands as moderators through MCP (`/mcp` or `npx kommentarwache-mcp`), scoped
-tokens, three skills and plugin manifests for Claude Code, Codex and opencode
-(`docs/agents.md`). The path from Jev to the open Laya model is built in: shadow
-providers, a training export with human labels, a notebook, a gate, promote and rollback
-(`training/README.md`); it waits for enough labelled comments. The plan is in
-`docs/plan.md`.
+Deutsch · [English](README.en.md)
 
-## Design in one paragraph
+kommentarwache liest die Kommentare unter euren Posts und Videos, erledigt die klaren Fälle
+selbst und zeigt Menschen nur das, worüber sich zwei KI-Modelle nicht einig werden. Die
+Moderation bleibt Handarbeit, wo sie es sein muss, und wird Automatik, wo sie es sein kann.
+Alles läuft auf einem eigenen kleinen Server, jede Entscheidung wird protokolliert, und
+Coding-Agenten wie Claude Code, Codex oder opencode können dieselben Aufgaben übernehmen
+wie ein Moderator im Dashboard.
 
-Models classify, code decides. A comment goes through a decision model first (Jev at
-launch; Laya, a 322M open model, once a fine-tuned checkpoint exists). Clear cases are
-closed or hidden at once. Unsure cases go to a text LLM running locally through Ollama,
-which sees the policy, examples and thread context. Only what both stages leave unsure
-reaches a human. Raw probabilities are stored for every assessment, so a changed policy
-can be replayed over history without calling a model again.
+Ein Projekt des [KI Klub Werder e. V.](https://github.com/KI-Klub-Werder-e-V), Apache-2.0.
 
-## Requirements
+## Wofür ist das gut?
 
-- One Linux server with 16 GB RAM and no GPU is enough, with Docker.
-- Node 24 and pnpm for development.
+Wer als Verein, Initiative oder kleine Redaktion Social-Media-Kanäle und Webseiten betreibt,
+kennt es: Unter den meisten Kommentaren ist nichts zu tun, unter ein paar wenigen ist es
+dringend, und dazwischen liegt eine große Grauzone aus Gereiztheit, Sarkasmus und
+Streitereien. Alles von Hand zu lesen kostet Zeit und Nerven. Ein einfacher Filter für
+„negative Kommentare“ hilft nicht, denn berechtigte Kritik ist nicht dasselbe wie
+Beleidigung.
 
-## Try it
+kommentarwache trennt das sauber:
+
+- **Kritik bleibt stehen.** Ein harter Kommentar zu einem Produkt, einer Entscheidung oder
+  einer Person des öffentlichen Lebens ist keine Regelverletzung. Beleidigungen,
+  Drohungen, Hetze und Spam sind es.
+- **Klare Fälle erledigen sich selbst.** Harmlose Kommentare werden durchgewunken, eindeutige
+  Verstöße sofort ausgeblendet.
+- **Unklare Fälle bekommen eine zweite Meinung** von einem lokal laufenden Sprachmodell, das
+  Regeln, Beispiele und den Gesprächsverlauf kennt.
+- **Menschen sehen nur den Rest.** Im Dashboard steht pro Fall, warum er hier gelandet ist,
+  was beide Modelle gesagt haben und ein Link direkt zum Kommentar auf der Plattform. Wann
+  ihr das erledigt, bestimmt ihr selbst.
+
+## So läuft ein Kommentar durch
+
+```
+Kommentar (YouTube, Facebook, Instagram, eure Webseite …)
+        │
+        ▼
+Stufe 1: schnelles Entscheidungsmodell (Jev, später Laya zum Selbsthosten)
+        │
+        ├── in Ordnung ─────────────► erledigt
+        ├── klarer Verstoß ─────────► sofort ausblenden
+        └── unklar
+              │
+              ▼
+Stufe 2: Sprachmodell auf eurem Server (Ollama), mit Regeln und Beispielen
+              │
+              ├── in Ordnung / Verstoß bestätigt ──► erledigt
+              └── weiter unklar oder Widerspruch ──► Prüfliste im Dashboard
+```
+
+Gelöscht oder gesperrt wird nur, wenn **beide** Stufen den Verstoß bestätigen. Ausblenden
+lässt sich rückgängig machen, Löschen nicht, deshalb ist die Hürde dort höher.
+
+## Was drinsteckt
+
+- **Dashboard** für Moderator:innen mit eigenem Login: Prüfliste, Verlauf pro Kommentar
+  (alle Modellantworten mit Wahrscheinlichkeiten, Entscheidungen, Aktionen), durchsuchbares
+  Protokoll und Auswertungen.
+- **Auswertungen**, die die Fragen beantworten, auf die es ankommt: Wie viele Kommentare
+  wurden markiert? Wie viele davon bestätigt die zweite Stufe? Wie oft ändert sie das Urteil,
+  und in welche Richtung? Wie oft widerspricht ein Mensch den Modellen? Welcher Anteil der
+  Kommentare musste von Menschen gelesen werden?
+- **Lückenloses Protokoll.** Jede Modellantwort, jede Entscheidung und jede Aktion wird
+  gespeichert, das Protokoll ist manipulationssicher verkettet (`kw audit verify`).
+- **Abgestufte Selbstständigkeit pro Quelle:** _aus_, _Probelauf_ (nur aufzeichnen, was
+  passiert wäre), _vorschlagen_ oder _automatisch_, jeweils für Ausblenden, Löschen und
+  Sperren, dazu eine Obergrenze pro Stunde. Neue Quellen starten mit allem auf _aus_.
+- **Regeln im Code, nicht im Modell.** Schwellenwerte stehen in einer versionierten
+  Richtlinie. Weil alle Wahrscheinlichkeiten gespeichert sind, lässt sich eine geänderte
+  Richtlinie auf die Vergangenheit anwenden, ohne ein Modell erneut zu fragen.
+- **Agenten-tauglich.** Alles, was im Dashboard geht, geht auch per MCP und REST, mit
+  Tokens mit begrenzten Rechten (Löschen und Sperren werden bei Agenten standardmäßig zu
+  Vorschlägen). Fertige Skills und Plugin-Dateien für Claude Code, Cowork, Codex und
+  opencode: [`docs/agents.md`](docs/agents.md).
+- **Der Weg zum eigenen Modell.** Am Anfang entscheidet Jev (eine Cloud-API). Wer lieber
+  alles selbst betreibt, kann später mit den gesammelten Entscheidungen das offene Modell
+  Laya trainieren, es zuerst im Schatten mitlaufen lassen, prüfen und dann umschalten,
+  inklusive Rückweg: [`training/README.md`](training/README.md).
+
+## Für wen ist es gedacht?
+
+- Vereine, Initiativen und kleine Organisationen mit einem oder mehreren Kanälen
+- Redaktionen und Blogs mit eigener Kommentarfunktion
+- alle, die ihre Moderation nachvollziehbar halten und selbst hosten wollen
+
+Es braucht einen Linux-Server mit 16 GB RAM, Docker und keine Grafikkarte.
+
+## Ehrlicher Stand
+
+Das Projekt ist jung (Version 0.1, Oktober 2026). Was bisher belegt ist und was nicht:
+
+**Getestet und gemessen**
+
+- Die Kernpipeline mit beiden Stufen, das Dashboard, die Aktionen auf einer simulierten
+  Plattform und die Agenten-Schnittstelle laufen Ende zu Ende; 130 automatische Tests.
+- Auf 357 echten Kommentaren aus _einem_ englischsprachigen Facebook-Thread musste nur
+  etwa jeder elfte Kommentar (9 %) von Menschen gelesen werden, im ersten Prototyp war es
+  jeder dritte (32 %). Die zweite Stufe war dabei etwas nachsichtiger als ein
+  unabhängiger menschlicher Prüfer. Das ist ein einzelner Datensatz, kein Beweis für
+  deutsche Kommentare oder andere Communities, und genau deshalb gibt es den Probelauf.
+- Kosten der Entscheidungsstufe: rund 2 Cent für diese 357 Kommentare.
+- Die zweite Stufe braucht auf einer 16-Kern-Workstation etwa 20 Sekunden pro Kommentar,
+  und nur die unklaren Fälle durchlaufen sie. Auf einem älteren Server wird es länger
+  dauern; das ist noch nicht gemessen.
+
+**Noch nicht erprobt**
+
+- Die Anbindungen an YouTube, Facebook-Seiten und Instagram sind gegen aufgezeichnete
+  API-Antworten getestet, aber noch nicht mit echten Konten. Empfehlung: erst Probelauf.
+- Laya (das offene Modell) braucht Feintuning mit euren eigenen Daten, bevor es Jev
+  ersetzen kann; dafür sind etwa 1.200 beurteilte Kommentare nötig.
+
+**Datenschutz**
+
+- Kommentartexte gehen in der Anfangskonfiguration an die Jev-API von TypeSafe. Namen und
+  Kennungen der Autor:innen werden nie an ein Modell geschickt. Für den Einsatz mit
+  Kommentaren Dritter ist eine datenschutzrechtliche Prüfung nötig (Auftragsverarbeitung,
+  Aufbewahrung, Informationspflichten); die bietet das Projekt nicht ab. Mit Laya auf
+  dem eigenen Server entfällt die Weitergabe.
+
+**Grenzen**
+
+- Nur Text, keine Bilder oder Videos.
+- Kein Livechat in Echtzeit. Das System ist für Kommentare gedacht, nicht für Millisekunden.
+- LinkedIn, TikTok, X und weitere Plattformen sind noch nicht angebunden. Welche
+  Plattform was überhaupt zulässt (Ausblenden, Löschen, Sperren), steht in
+  [`docs/connectors.md`](docs/connectors.md).
+- Es ersetzt keine Hausregeln. Was erlaubt ist, entscheidet ihr, das Werkzeug setzt es um.
+
+## Schnellstart
+
+Voraussetzungen: Node 24, pnpm, Docker (für Postgres), ein [TypeSafe-API-Schlüssel](https://console.typesafe.ai/)
+und optional [Ollama](https://ollama.com/) für die zweite Stufe.
 
 ```bash
-cp .env.example .env            # set DATABASE_URL and TYPESAFE_API_KEY
+cp .env.example .env            # DATABASE_URL und TYPESAFE_API_KEY eintragen
+docker compose up -d db
 pnpm install && pnpm build
 KW="node packages/server/dist/cli/main.js"
 $KW migrate
-$KW setup                        # activates Jev with battery v2 and the severity_led policy
-$KW token create --name demo     # prints an API token once
-$KW moderator create --email you@example.org --name "You" --password 'at least ten chars'
-$KW source modes --source demo --hide auto --delete propose --ban propose   # or in the dashboard
+$KW setup                        # Jev als Stufe 1, Ollama als Stufe 2
+$KW token create --name demo     # gibt einen API-Token einmalig aus
+$KW moderator create --email du@example.org --name "Du" --password 'mindestens zehn Zeichen'
 pnpm --filter @kommentarwache/server dev
-# dashboard: http://localhost:8080/app
-
-curl -s localhost:8080/v1/moderate \
-  -H "Authorization: Bearer kw_..." -H "Content-Type: application/json" \
-  -d '{"source":"demo","id":"c1","text":"Did you even read the article? Come on."}'
+# Dashboard: http://localhost:8080/app
 ```
 
-The answer carries the verdict (`ok`, `unsure` or `violation`), the category, the reasons
-with their thresholds, and the state: `closed`, or `s2_pending` for anything that needs a
-second look. The OpenAPI document is at `/openapi.json`.
+Einen Kommentar testen:
 
-Stage 2 needs Ollama with the model from `OLLAMA_MODEL` pulled (`ollama pull
-gemma4:12b-it-qat`). The server runs the worker in-process; `kw worker` runs one
-separately. On a 16-core workstation CPU, `gemma4:12b` took about 20 s per comment once
-loaded (70 s for the first, including the load); expect more on an older server. Only
-the unsure band pays that price, and a comment that is not answered within the policy's
-deadline (15 minutes by default) goes to the human queue instead.
+```bash
+curl -s localhost:8080/v1/moderate \
+  -H "Authorization: Bearer kw_..." -H "Content-Type: application/json" \
+  -d '{"source":"demo","id":"c1","text":"Hast du den Artikel überhaupt gelesen? Na komm."}'
+```
 
-## Development
+Die Antwort enthält das Urteil (`ok`, `unsure`, `violation`), die Kategorie, die Gründe mit
+ihren Schwellenwerten und den Stand (`closed` oder `s2_pending`). Die zweite Stufe braucht
+ein gezogenes Modell, etwa `ollama pull gemma4:12b-it-qat`.
+
+Plattformen anbinden, Schritt für Schritt: [`docs/connectors.md`](docs/connectors.md).
+
+## Dokumentation
+
+| Thema                                                  | Wo                                             |
+| ------------------------------------------------------ | ---------------------------------------------- |
+| Aufbau und Entscheidungen                              | [`docs/architecture.md`](docs/architecture.md) |
+| YouTube, Facebook, Instagram, eigene Webseite anbinden | [`docs/connectors.md`](docs/connectors.md)     |
+| Nutzung durch Coding-Agenten (MCP, Skills, Plugins)    | [`docs/agents.md`](docs/agents.md)             |
+| Von Jev zum eigenen Modell                             | [`training/README.md`](training/README.md)     |
+| Messergebnisse und Testdaten                           | [`eval/README.md`](eval/README.md)             |
+| Bauplan mit Meilensteinen (englisch)                   | [`docs/plan.md`](docs/plan.md)                 |
+
+## Mitmachen
+
+Das Projekt ist Open Source und freut sich über Hilfe: weitere Plattform-Anbindungen
+(Telegram, Discord, WordPress, Threads, GitHub und Bluesky sind als Nächstes geplant),
+Erfahrungen aus dem Probelauf, Testdaten ohne personenbezogene Inhalte, bessere
+Beispiele für die Regeln der zweiten Stufe und Übersetzungen. Fehler und Ideen gern als
+Issue. Für die Entwicklung:
 
 ```bash
 pnpm install
-pnpm build                       # also the typecheck
-TEST_DATABASE_URL=postgres://... pnpm test   # or leave it unset to use a Docker container
+pnpm build                       # prüft auch die Typen
+TEST_DATABASE_URL=postgres://... pnpm test   # ohne Angabe startet ein Docker-Container
 ```
 
-## Licence
+Arbeitsregeln für Menschen und Agenten stehen in [`AGENTS.md`](AGENTS.md). Echte
+Kommentare gehören nie ins Repository.
 
-Apache-2.0. See `LICENSE`.
+## Lizenz
+
+Apache-2.0, siehe [`LICENSE`](LICENSE).
