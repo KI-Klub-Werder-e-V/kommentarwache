@@ -1,0 +1,50 @@
+name: Fehlerbericht
+description: Etwas funktioniert nicht wie erwartet.
+title: '[Fehler]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: Bitte keine echten Kommentare Dritter, Namen oder Zugangsdaten posten. Sicherheitslücken bitte vertraulich melden (SECURITY.md).
+  - type: textarea
+    id: beschreibung
+    attributes:
+      label: Was ist passiert?
+    validations:
+      required: true
+  - type: textarea
+    id: schritte
+    attributes:
+      label: Schritte zum Nachstellen
+    validations:
+      required: true
+  - type: textarea
+    id: erwartet
+    attributes:
+      label: Was habt ihr erwartet?
+    validations:
+      required: true
+  - type: dropdown
+    id: bereich
+    attributes:
+      label: Bereich
+      options:
+        - Pipeline und Modelle
+        - Dashboard
+        - Aktionen und Modi
+        - Anbindungen (YouTube, Facebook, Instagram, Webseite)
+        - MCP, REST und Skills
+        - Training (Laya)
+        - Sonstiges
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version oder Commit
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs oder Fehlermeldungen
+      description: Bitte vorher personenbezogene Daten entfernen.
+      render: shell

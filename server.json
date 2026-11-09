@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.KI-Klub-Werder-e-V/kommentarwache",
+  "title": "kommentarwache",
+  "description": "Self-hosted comment moderation: classify comments, work the review queue, tune policy.",
+  "repository": {
+    "url": "https://github.com/KI-Klub-Werder-e-V/kommentarwache",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/KI-Klub-Werder-e-V/kommentarwache#schnellstart",
+  "version": "0.1.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://{kw_host}/mcp",
+      "variables": {
+        "kw_host": {
+          "description": "Host name of your kommentarwache server, e.g. moderation.example.org",
+          "isRequired": true
+        }
+      },
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token from: kw token create --name <agent> --scopes moderate,review",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,10 +1,16 @@
 # kommentarwache
 
+[![CI](https://github.com/KI-Klub-Werder-e-V/kommentarwache/actions/workflows/ci.yml/badge.svg)](https://github.com/KI-Klub-Werder-e-V/kommentarwache/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/KI-Klub-Werder-e-V/kommentarwache)](https://github.com/KI-Klub-Werder-e-V/kommentarwache/releases)
+[![Lizenz: Apache-2.0](https://img.shields.io/badge/Lizenz-Apache--2.0-blue.svg)](LICENSE)
+![MCP](https://img.shields.io/badge/MCP-server-blue)
+
 **Kommentare moderieren, ohne jeden einzeln zu lesen.**
 
 Deutsch · [English](README.en.md)
 
-kommentarwache liest die Kommentare unter euren Posts und Videos, erledigt die klaren Fälle
+kommentarwache ist eine selbst gehostete Open-Source-Software zur Kommentar-Moderation für
+Vereine, Initiativen und kleine Redaktionen. Sie liest die Kommentare unter euren Posts und Videos, erledigt die klaren Fälle
 selbst und zeigt Menschen nur das, worüber sich zwei KI-Modelle nicht einig werden. Die
 Moderation bleibt Handarbeit, wo sie es sein muss, und wird Automatik, wo sie es sein kann.
 Alles läuft auf einem eigenen kleinen Server, jede Entscheidung wird protokolliert, und
@@ -93,7 +99,7 @@ Es braucht einen Linux-Server mit 16 GB RAM, Docker und keine Grafikkarte.
 
 ## Ehrlicher Stand
 
-Das Projekt ist jung (Version 0.1, Oktober 2026). Was bisher belegt ist und was nicht:
+Das Projekt ist jung (Version 0.1, November 2026). Was bisher belegt ist und was nicht:
 
 **Getestet und gemessen**
 
@@ -176,6 +182,38 @@ Plattformen anbinden, Schritt für Schritt: [`docs/connectors.md`](docs/connecto
 | Messergebnisse und Testdaten                           | [`eval/README.md`](eval/README.md)             |
 | Bauplan mit Meilensteinen (englisch)                   | [`docs/plan.md`](docs/plan.md)                 |
 
+## Häufige Fragen
+
+**Was ist kommentarwache?**
+Eine selbst gehostete Open-Source-Software (Apache-2.0), die Kommentare auf Social-Media-Kanälen
+und Webseiten mit zwei KI-Stufen vorsortiert und Menschen nur die unklaren Fälle zeigt.
+
+**Welche Plattformen werden unterstützt?**
+YouTube, Facebook-Seiten, Instagram und eigene Webseiten. Die Plattform-Anbindungen sind bisher nur
+gegen aufgezeichnete API-Antworten getestet, noch nicht mit echten Konten. LinkedIn, TikTok und X
+sind nicht angebunden.
+
+**Löscht die KI Kommentare selbstständig?**
+Nur wenn ihr das für eine Quelle einschaltet und beide Stufen den Verstoß bestätigen. Neue Quellen
+starten mit allem auf _aus_, und mit dem Probelauf seht ihr vorab, was passiert wäre.
+
+**Werden Kommentare an Dritte geschickt?**
+In der Anfangskonfiguration gehen Kommentartexte an die Jev-API von TypeSafe, Namen und Kennungen
+der Autor:innen nie. Mit dem offenen Modell Laya auf dem eigenen Server entfällt die Weitergabe.
+Eine datenschutzrechtliche Prüfung nehmt ihr selbst vor.
+
+**Was kostet es, und was braucht man?**
+Die Software ist kostenlos. Nötig sind ein Linux-Server mit 16 GB RAM und Docker, eine Grafikkarte
+nicht. Die Entscheidungsstufe kostete in unserem Test rund 2 Cent für 357 Kommentare.
+
+**Funktioniert es auf Deutsch?**
+Das ist noch nicht belegt: Gemessen wurde bisher nur an einem englischsprachigen Thread. Prüft es
+deshalb im Probelauf mit euren eigenen Kommentaren.
+
+**Können KI-Agenten damit arbeiten?**
+Ja. Alles aus dem Dashboard geht auch per MCP und REST, mit Tokens mit begrenzten Rechten. Skills
+und Plugin-Dateien gibt es für Claude Code, Cowork, Codex und opencode.
+
 ## Mitmachen
 
 Das Projekt ist Open Source und freut sich über Hilfe: weitere Plattform-Anbindungen
@@ -190,7 +228,8 @@ pnpm build                       # prüft auch die Typen
 TEST_DATABASE_URL=postgres://... pnpm test   # ohne Angabe startet ein Docker-Container
 ```
 
-Arbeitsregeln für Menschen und Agenten stehen in [`AGENTS.md`](AGENTS.md). Echte
+Wie ihr beitragt, steht in [`CONTRIBUTING.md`](CONTRIBUTING.md), die Arbeitsregeln für Menschen
+und Agenten in [`AGENTS.md`](AGENTS.md). Echte
 Kommentare gehören nie ins Repository.
 
 ## Lizenz

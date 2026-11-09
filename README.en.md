@@ -1,5 +1,10 @@
 # kommentarwache
 
+[![CI](https://github.com/KI-Klub-Werder-e-V/kommentarwache/actions/workflows/ci.yml/badge.svg)](https://github.com/KI-Klub-Werder-e-V/kommentarwache/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/KI-Klub-Werder-e-V/kommentarwache)](https://github.com/KI-Klub-Werder-e-V/kommentarwache/releases)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+![MCP](https://img.shields.io/badge/MCP-server-blue)
+
 [Deutsch](README.md) · English
 
 Self-hosted comment moderation for small organisations. It reads comments from the
@@ -68,6 +73,25 @@ separately. On a 16-core workstation CPU, `gemma4:12b` took about 20 s per comme
 loaded (70 s for the first, including the load); expect more on an older server. Only
 the unsure band pays that price, and a comment that is not answered within the policy's
 deadline (15 minutes by default) goes to the human queue instead.
+
+## FAQ
+
+**What is kommentarwache?** Self-hosted, open-source (Apache-2.0) comment moderation that pre-sorts
+comments with two AI stages and shows humans only the unclear cases.
+
+**Which platforms does it support?** YouTube, Facebook Pages, Instagram and your own sites. The
+platform connectors have so far only been tested against recorded API responses, not real accounts.
+
+**Does the AI delete comments on its own?** Only if you enable that for a source and both stages
+confirm the violation. New sources start with everything off.
+
+**Does comment text leave my server?** With the default setup, comment text goes to TypeSafe's Jev
+API; author names and IDs never do. Running the open Laya model yourself removes that transfer.
+
+**Does it work in German?** Not yet proven: measurements so far come from one English-language thread.
+Use dry-run mode on your own comments first.
+
+**What does it need?** One Linux server with 16 GB RAM and Docker, no GPU.
 
 ## Development
 

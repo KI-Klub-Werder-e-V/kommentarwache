@@ -1,0 +1,21 @@
+name: Funktionswunsch
+description: Schlagt eine neue Funktion, Plattform oder Verbesserung vor.
+title: '[Wunsch]: '
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem habt ihr bei der Moderation?
+    validations:
+      required: true
+  - type: textarea
+    id: loesung
+    attributes:
+      label: Wie stellt ihr euch die Lösung vor?
+    validations:
+      required: true
+  - type: textarea
+    id: alternativen
+    attributes:
+      label: Wie löst ihr das bisher?
